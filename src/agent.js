@@ -12,6 +12,9 @@
 
 // 無料枠で使える中でいちばん賢い Flash。無料枠では送った内容が Google の製品改善に使われる。
 const DEFAULT_MODEL = 'gemini-3.8-flash';
+// 無料枠は混雑すると 503 / 429 を返すことがある。そのときは同じく無料の軽いモデルに切り替える。
+const FALLBACK_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash-lite'];
+const CALL_TIMEOUT_MS = 20000;
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
 const MAX_HISTORY = 16;
 const MAX_STEPS = 8;
@@ -348,22 +351,40 @@ export async function runAgent(body, env) {
     generationConfig: { maxOutputTokens: 4096 }
   };
 
+  // 最初の呼び出しで使えたモデルを、この依頼の最後まで使う（思考の署名はモデルごとなので途中で替えない）
+  const candidates = [model, ...FALLBACK_MODELS.filter((m) => m !== model)];
+  let active = null;
   for (let step = 0; step < MAX_STEPS; step++) {
-    let res;
-    try {
-      res = await fetch(`${API_BASE}${model}:generateContent`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
-        body: JSON.stringify({ ...request, contents })
-      });
-    } catch {
-      return { ok: false, error: 'network', message: 'AI に接続できませんでした。', actions };
+    const tryModels = active ? [active, active] : candidates;
+    let res = null, data = {}, lastStatus = 0, lastMsg = '';
+    for (let k = 0; k < tryModels.length; k++) {
+      if (k > 0) await new Promise((r) => setTimeout(r, 600 * k));
+      try {
+        res = await fetch(`${API_BASE}${tryModels[k]}:generateContent`, {
+          method: 'POST',
+          signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+          headers: { 'content-type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+          body: JSON.stringify({ ...request, contents })
+        });
+      } catch {
+        res = null; lastStatus = 0; lastMsg = '';
+        continue;
+      }
+      data = await res.json().catch(() => ({}));
+      if (res.ok) { active = tryModels[k]; break; }
+      lastStatus = res.status;
+      lastMsg = String(data.error?.message || '').slice(0, 120);
+      // 混雑・上限・一時的な失敗だけ次を試す。キーやリクエストの誤りはすぐ返す
+      if (![429, 500, 502, 503, 504].includes(res.status)) break;
     }
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const msg = res.status === 429 ? '無料枠の回数上限に達しました。少し待ってからもう一度どうぞ。'
-        : res.status === 400 || res.status === 403 ? `AI の呼び出しに失敗しました（${res.status}: ${String(data.error?.message || '').slice(0, 120)}）。`
-        : `AI の呼び出しに失敗しました（${res.status}）。`;
+    if (!res || !res.ok) {
+      // ツールでの作業は済んでいて、最後の文章だけ作れなかった場合は、済んだ作業を成功として返す
+      if (step > 0 && actions.length) {
+        return { ok: true, text: actions.some((x) => x.type === 'set_cart') ? 'カートに入れました。' : '画面に出した内容を確認してください。', actions, model: active };
+      }
+      const msg = lastStatus === 429 ? '無料枠の回数上限に達しました。少し待ってからもう一度どうぞ。'
+        : !lastStatus || lastStatus >= 500 ? 'AI が混み合っています。少し待ってからもう一度どうぞ。'
+        : `AI の呼び出しに失敗しました（${lastStatus}${lastMsg ? ': ' + lastMsg : ''}）。`;
       return { ok: false, error: 'api', message: msg, actions };
     }
     await recordUsage(db, data.usageMetadata || {});
@@ -378,7 +399,7 @@ export async function runAgent(body, env) {
     const calls = content.parts.filter((p) => p.functionCall);
     if (!calls.length) {
       const text = content.parts.filter((p) => p.text && !p.thought).map((p) => p.text).join('').trim();
-      return { ok: true, text: text || (actions.length ? '画面に反映しました。' : ''), actions, truncated: cand.finishReason === 'MAX_TOKENS' };
+      return { ok: true, text: text || (actions.length ? '画面に反映しました。' : ''), actions, model: active, truncated: cand.finishReason === 'MAX_TOKENS' };
     }
     const results = [];
     for (const p of calls) {
