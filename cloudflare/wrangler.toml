@@ -1,8 +1,0 @@
-name = "dope-register"
-main = "worker.js"
-compatibility_date = "2025-09-01"
-
-[[d1_databases]]
-binding = "DB"
-database_name = "dope-register"
-database_id = "ここに D1 の database_id"
