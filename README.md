@@ -2,7 +2,8 @@
 
 ドリンク販売用のシンプルな会計システム。
 
-公開ページ: https://claude.ai/artifact/FPercdpqnCHx9ua6TvxiTS
+- 本番（ID/パスワードでログイン）: Cloudflare Workers ＋ D1 で動かす（下の「Cloudflare に公開する」）
+- お試し版（claude.ai アカウントで利用）: https://claude.ai/artifact/FPercdpqnCHx9ua6TvxiTS
 
 ## 料金ルール
 
@@ -24,5 +25,26 @@
 
 ## データ
 
-claude.ai のリンクから開くと、売上は全端末で共有・自動同期されます。
-ファイルを直接ブラウザで開いた場合は、その端末のブラウザ内だけに保存されます。
+- Cloudflare 版: 売上は D1 データベースに保存され、全端末で約10秒ごとに同期します。
+  電波が切れても会計はでき、端末に「未送信」として残り、つながったら自動で送られます。
+- claude.ai 版: claude.ai の共有データに保存されます。
+- `register.html` を直接ブラウザで開いた場合は、その端末の中だけに保存されます。
+
+## Cloudflare に公開する
+
+ファイル構成:
+
+- `register.html` … 画面（全バージョン共通）
+- `cloudflare/server.js` … ログインと保存の処理
+- `cloudflare/worker.js` … 上の 2 つをまとめた貼り付け用ファイル（`node cloudflare/build.mjs` で作り直す）
+
+ダッシュボードで公開する手順:
+
+1. Cloudflare ダッシュボード →「ストレージとデータベース」→「D1」→ データベースを作成（名前: `dope-register`）
+2. 「Workers & Pages」→ 作成 → Worker（Hello World）を名前 `dope-register` で作成してデプロイ
+3. 「コードを編集」で中身を全部消し、`cloudflare/worker.js` の中身を貼り付けてデプロイ
+4. Worker の「設定」→「バインディング」→ D1 データベースを追加（変数名 `DB`、データベース `dope-register`）
+5. 「設定」→「変数とシークレット」→ 種類「シークレット」で `LOGIN_ID` と `LOGIN_PASSWORD` を追加
+6. `https://dope-register.<あなたのサブドメイン>.workers.dev` を開いてログイン
+
+ID・パスワードはコードには書かず、Cloudflare のシークレットだけに置きます。パスワードを変えると、ログイン済みの端末も再ログインが必要になります。

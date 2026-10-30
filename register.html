@@ -178,6 +178,20 @@ tr.grand td{font-weight:700;border-bottom:0}
 .sale.voided .sale-items,.sale.voided .sale-amt{opacity:.5;text-decoration:line-through}
 .voided-mark{font-size:11px;font-weight:700;color:var(--danger)}
 
+.btn{display:inline-flex;align-items:center;text-decoration:none;color:var(--ink)}
+.pending-mark{font-size:11px;font-weight:700;color:var(--warn)}
+
+/* login */
+.login{position:fixed;inset:0;z-index:40;display:grid;place-items:center;overflow-y:auto;background:var(--bg);padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.login-card{width:100%;max-width:380px;display:flex;flex-direction:column;gap:16px;padding:26px 22px;border-radius:18px;background:var(--surface);box-shadow:var(--shadow)}
+.login-card .brand b{font-size:34px}
+.login-lead{margin:0;color:var(--muted);font-size:14px}
+.field{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--muted)}
+.field input{height:50px;padding:0 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-family:var(--f-num);font-size:18px;letter-spacing:normal}
+.field input:focus{outline:3px solid var(--accent);outline-offset:1px}
+.login-error{margin:0;padding:10px 12px;border-radius:10px;background:var(--ticket-soft);color:var(--danger);font-weight:700;font-size:13px}
+.login-btn{flex:none;margin-left:0;width:100%}
+
 /* toast */
 .toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 12px);transform:translateX(-50%);z-index:30;display:flex;align-items:center;gap:12px;width:max-content;max-width:calc(100% - 32px);padding:12px 12px 12px 16px;border-radius:12px;background:var(--ink);color:var(--surface);box-shadow:var(--shadow);font-weight:500}
 .toast.error{background:var(--danger);color:var(--danger-ink)}
@@ -215,6 +229,7 @@ tr.grand td{font-weight:700;border-bottom:0}
   <header class="top">
     <h1 class="brand"><b>DOPE</b><span>レジ</span></h1>
     <span class="status" id="status" data-s="connecting">接続中…</span>
+    <button type="button" class="link-btn" id="logoutBtn" hidden>ログアウト</button>
     <nav class="tabs" aria-label="画面切り替え">
       <a href="#register" data-view="register" aria-current="page">レジ</a>
       <a href="#summary" data-view="summary">集計</a>
@@ -344,6 +359,22 @@ tr.grand td{font-weight:700;border-bottom:0}
   </main>
 </div>
 
+<div class="login" id="login" hidden>
+  <form class="login-card" id="loginForm" novalidate>
+    <h2 class="brand"><b>DOPE</b><span>レジ</span></h2>
+    <p class="login-lead">スタッフ用のIDとパスワードでログインしてください。</p>
+    <label class="field" for="loginId">ID
+      <input id="loginId" name="username" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false">
+    </label>
+    <label class="field" for="loginPw">パスワード
+      <input id="loginPw" name="password" type="password" autocomplete="current-password">
+    </label>
+    <p class="login-error" id="loginError" role="alert" hidden></p>
+    <button type="submit" class="checkout-btn login-btn" id="loginBtn">ログイン</button>
+    <p class="fine">一度ログインすると、この端末では30日間そのまま使えます。</p>
+  </form>
+</div>
+
 <div class="toast" id="toast" role="status" aria-live="polite" hidden><span id="toastMsg"></span><button type="button" id="toastAction" hidden></button></div>
 
 <script>
@@ -355,8 +386,13 @@ tr.grand td{font-weight:700;border-bottom:0}
   var PRICE = { drink: 300, ice: 200 };
   var KEYS = ['normal', 'normalIce', 'ticket', 'ticketIce'];
   var DAY_CUTOFF_HOURS = 6; // 営業日の区切り（朝6時）
+  var SYNC_MS = 10000;      // サーバー版で他の端末の会計を取りに行く間隔
   var LS_SALES = 'dope-register:sales:v1';
   var LS_CART = 'dope-register:cart:v1';
+  var LS_TOKEN = 'dope-register:token:v1';
+  var LS_OUTBOX = 'dope-register:outbox:v1';
+  // Cloudflare Worker から配信されたときだけ設定される（例: "/api"）
+  var API_BASE = typeof window.DOPE_API === 'string' ? window.DOPE_API : null;
 
   function priceFor(key, p) {
     p = p || PRICE;
@@ -375,9 +411,10 @@ tr.grand td{font-weight:700;border-bottom:0}
     recv: null,                // null | {mode:'exact'} | {mode:'amount', value, src}
     sales: [],                 // newest first
     loaded: false,
-    mode: 'connecting',        // connecting | shared | local
+    mode: 'connecting',        // connecting | server | shared | local
     syncError: false,
     canWrite: true,
+    loggedIn: true,
     view: 'register',
     dayFilter: 'today',
     busy: false
@@ -386,6 +423,8 @@ tr.grand td{font-weight:700;border-bottom:0}
   var downloads = null;
   var localOk = true;
   var pendingVoid = null, pendingVoidTimer = null;
+  // server mode
+  var token = null, serverSales = [], serverVersion = null, outbox = [], syncing = false, syncAgain = false;
 
   var $ = function (id) { return document.getElementById(id); };
 
@@ -410,9 +449,13 @@ tr.grand td{font-weight:700;border-bottom:0}
     return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; });
   }
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
-  function makeId(ts) { return 's' + ts.toString(36) + '-' + Math.random().toString(36).slice(2, 7); }
+  function rid() { return Math.random().toString(36).slice(2, 7); }
+  function makeId(ts) { return 's' + ts.toString(36) + '-' + rid(); }
   function saleDay(s) { return s.day || bizDay(s.ts || 0); }
   function itemsOf(s) { var it = s.items || {}; var o = {}; KEYS.forEach(function (k) { o[k] = Number(it[k]) || 0; }); return o; }
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+  function lsDel(k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } }
 
   function cartTotals() {
     var total = 0, cups = 0;
@@ -424,20 +467,105 @@ tr.grand td{font-weight:700;border-bottom:0}
     if (state.recv.mode === 'exact') return total;
     return state.recv.value;
   }
-  function saveCartDraft() {
-    try { localStorage.setItem(LS_CART, JSON.stringify(state.cart)); } catch (e) { /* ignore */ }
+  function saveCartDraft() { lsSet(LS_CART, JSON.stringify(state.cart)); }
+  function sortSales() { state.sales.sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); }); }
+
+  // ---- server mode (Cloudflare Worker) ------------------------------------------
+  // 会計はまず端末内の「送信待ち」に入れてから送るので、電波が切れても会計できる。
+  async function api(fn, body) {
+    var r = await fetch(API_BASE + '/' + fn, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
+    });
+    if (r.status === 401) return { ok: false, error: 'auth' };
+    if (!r.ok && r.status !== 429) throw new Error('http ' + r.status);
+    return r.json();
+  }
+  function loadOutbox() {
+    try { var v = JSON.parse(lsGet(LS_OUTBOX) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; }
+  }
+  function saveOutbox() { lsSet(LS_OUTBOX, JSON.stringify(outbox)); }
+  function mergeServer() {
+    var map = {}, list = [];
+    serverSales.forEach(function (s) { var c = Object.assign({}, s); map[c.id] = c; list.push(c); });
+    outbox.forEach(function (op) {
+      if (op.type === 'add' && op.sale) {
+        if (!map[op.sale.id]) { var c = Object.assign({}, op.sale, { pending: true }); map[c.id] = c; list.push(c); }
+      } else if (op.type === 'void' && map[op.id]) {
+        map[op.id].voided = !!op.voided; map[op.id].pending = true;
+      }
+    });
+    state.sales = list; sortSales();
+  }
+  function queue(op) {
+    op.opId = 'o' + Date.now().toString(36) + rid();
+    outbox.push(op); saveOutbox();
+    mergeServer(); renderData(); renderStatus();
+    syncNow();
+  }
+  async function syncNow() {
+    if (state.mode !== 'server' || !token) return;
+    if (syncing) { syncAgain = true; return; }
+    syncing = true;
+    var ops = outbox.slice();
+    try {
+      var res = await api('sync', { token: token, ops: ops, version: serverVersion });
+      if (res && res.ok) {
+        var done = {};
+        (res.applied || []).forEach(function (id) { done[id] = true; });
+        outbox = outbox.filter(function (o) { return !done[o.opId]; });
+        saveOutbox();
+        if (res.sales) serverSales = res.sales;
+        serverVersion = res.version;
+        state.loaded = true; state.syncError = false;
+      } else if (res && res.error === 'auth') {
+        loggedOut('ログインの期限が切れました。もう一度ログインしてください。');
+      } else {
+        state.syncError = true;
+      }
+    } catch (e) { state.syncError = true; }
+    syncing = false;
+    mergeServer(); renderData(); renderStatus();
+    if (syncAgain) { syncAgain = false; syncNow(); }
+  }
+  function showLogin(msg) {
+    $('login').hidden = false;
+    $('loginError').hidden = !msg; $('loginError').textContent = msg || '';
+  }
+  function loggedOut(msg) {
+    token = null; lsDel(LS_TOKEN); state.loggedIn = false;
+    showLogin(msg); renderStatus(); renderCheckout();
+  }
+  async function submitLogin(e) {
+    e.preventDefault();
+    var id = $('loginId').value.trim(), pw = $('loginPw').value;
+    if (!id || !pw) { showLogin('IDとパスワードを入力してください。'); return; }
+    var btn = $('loginBtn');
+    btn.disabled = true; btn.textContent = '確認中…';
+    try {
+      var res = await api('login', { id: id, password: pw });
+      if (res && res.ok) {
+        token = res.token; lsSet(LS_TOKEN, token); state.loggedIn = true;
+        $('loginPw').value = ''; $('login').hidden = true;
+        renderAll(); syncNow();
+      } else if (res && res.error === 'locked') {
+        showLogin('ログインの失敗が続いたので、10分ほど待ってからもう一度試してください。');
+      } else if (res && res.error === 'not_configured') {
+        showLogin('サーバーにIDとパスワードがまだ設定されていません（LOGIN_ID / LOGIN_PASSWORD）。');
+      } else {
+        showLogin('IDかパスワードが違います。');
+      }
+    } catch (err) {
+      showLogin('サーバーにつながりません。電波を確認して、もう一度試してください。');
+    }
+    btn.disabled = false; btn.textContent = 'ログイン';
   }
 
-  // ---- storage --------------------------------------------------------------
+  // ---- storage (claude.ai / この端末のみ) ---------------------------------------
   function loadLocalSales() {
     try { var raw = localStorage.getItem(LS_SALES); return raw ? JSON.parse(raw) : []; }
     catch (e) { return null; }
   }
-  function persistLocal() {
-    try { localStorage.setItem(LS_SALES, JSON.stringify(state.sales)); localOk = true; }
-    catch (e) { localOk = false; }
-  }
-  function sortSales() { state.sales.sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); }); }
+  function persistLocal() { localOk = lsSet(LS_SALES, JSON.stringify(state.sales)); }
 
   async function withRetry(fn) {
     try { return await fn(); }
@@ -451,21 +579,23 @@ tr.grand td{font-weight:700;border-bottom:0}
   }
 
   async function writeSale(sale) {
+    if (state.mode === 'server') { queue({ type: 'add', sale: sale }); return; }
     if (state.mode === 'shared') {
       var body = Object.assign({}, sale); delete body.id;
       await withRetry(function () { return salesCol.doc(sale.id).set(body); });
-    } else {
-      state.sales.unshift(sale); sortSales(); persistLocal();
-      if (!localOk) throw { code: 'local_failed' };
+      return;
     }
+    state.sales.unshift(sale); sortSales(); persistLocal();
+    if (!localOk) throw { code: 'local_failed' };
   }
   async function updateSale(id, patch) {
+    if (state.mode === 'server') { queue({ type: 'void', id: id, voided: !!patch.voided, at: Date.now() }); return; }
     if (state.mode === 'shared') {
       await withRetry(function () { return salesCol.doc(id).update(patch); });
-    } else {
-      var s = state.sales.find(function (x) { return x.id === id; });
-      if (s) { Object.assign(s, patch); persistLocal(); }
+      return;
     }
+    var s = state.sales.find(function (x) { return x.id === id; });
+    if (s) { Object.assign(s, patch); persistLocal(); }
   }
 
   function handleWriteError(e) {
@@ -500,15 +630,29 @@ tr.grand td{font-weight:700;border-bottom:0}
   }
 
   async function connect() {
-    var api = window.claude && typeof window.claude.use === 'function' ? window.claude : null;
+    if (API_BASE !== null) {
+      state.mode = 'server';
+      token = lsGet(LS_TOKEN);
+      outbox = loadOutbox();
+      state.loggedIn = !!token;
+      mergeServer();
+      if (!token) showLogin();
+      renderAll();
+      syncNow();
+      setInterval(function () { if (!document.hidden) syncNow(); }, SYNC_MS);
+      document.addEventListener('visibilitychange', function () { if (!document.hidden) syncNow(); });
+      window.addEventListener('online', syncNow);
+      return;
+    }
+    var claudeApi = window.claude && typeof window.claude.use === 'function' ? window.claude : null;
     var db = null;
-    if (api) { try { db = await api.use('db'); } catch (e) { db = null; } }
+    if (claudeApi) { try { db = await claudeApi.use('db'); } catch (e) { db = null; } }
     if (db) {
       state.mode = 'shared';
       salesCol = db.collection('sales');
       subscribe();
       try {
-        var user = await api.use('user');
+        var user = await claudeApi.use('user');
         if (user) { var w = await user.can('data.write'); if (w === false) state.canWrite = false; }
       } catch (e) { /* keep inputs; a refused write decides */ }
     } else {
@@ -519,8 +663,8 @@ tr.grand td{font-weight:700;border-bottom:0}
       sortSales();
       state.loaded = true;
     }
-    if (api) {
-      try { downloads = await api.use('downloads'); } catch (e) { downloads = null; }
+    if (claudeApi) {
+      try { downloads = await claudeApi.use('downloads'); } catch (e) { downloads = null; }
     }
     renderAll();
   }
@@ -538,10 +682,13 @@ tr.grand td{font-weight:700;border-bottom:0}
     saveCartDraft();
     renderCart();
   }
+  function canCheckout() {
+    return state.mode !== 'connecting' && state.canWrite && state.loggedIn && !state.busy;
+  }
 
   async function checkout() {
     var t = cartTotals();
-    if (!t.cups || state.busy || state.mode === 'connecting' || !state.canWrite) return;
+    if (!t.cups || !canCheckout()) return;
     var recv = t.total > 0 ? receivedValue(t.total) : null;
     if (recv !== null && recv < t.total) return;
     var ts = Date.now();
@@ -615,7 +762,15 @@ tr.grand td{font-weight:700;border-bottom:0}
   // ---- render -----------------------------------------------------------------
   function renderStatus() {
     var el = $('status'), s, text;
-    if (state.mode === 'connecting') { s = 'connecting'; text = '接続中…'; }
+    if (state.mode === 'server') {
+      var n = outbox.length;
+      if (!state.loggedIn) { s = 'connecting'; text = 'ログインしてください'; }
+      else if (state.syncError) { s = 'local'; text = n ? 'オフライン・未送信 ' + n + '件' : 'オフライン'; }
+      else if (n) { s = 'local'; text = '送信中・' + n + '件'; }
+      else if (!state.loaded) { s = 'connecting'; text = '接続中…'; }
+      else { s = 'shared'; text = '全端末で共有中'; }
+    }
+    else if (state.mode === 'connecting') { s = 'connecting'; text = '接続中…'; }
     else if (!state.canWrite) { s = 'readonly'; text = '閲覧のみ'; }
     else if (state.syncError) { s = 'error'; text = '同期が止まっています・再読み込みしてください'; }
     else if (state.mode === 'shared') { s = 'shared'; text = '全端末で共有中'; }
@@ -623,6 +778,7 @@ tr.grand td{font-weight:700;border-bottom:0}
     el.dataset.s = s; el.textContent = text;
     $('readonlyNotice').hidden = state.canWrite || state.mode === 'connecting';
     $('localNotice').hidden = state.mode !== 'local';
+    $('logoutBtn').hidden = !(state.mode === 'server' && state.loggedIn);
   }
 
   function renderTiles() {
@@ -683,13 +839,13 @@ tr.grand td{font-weight:700;border-bottom:0}
     var short = recv !== null && recv < t.total;
     var btn = $('checkoutBtn'), label = '会計する', disabled = !t.cups || short || state.busy;
     if (state.mode === 'connecting') { label = '接続中…'; disabled = true; }
+    else if (!state.loggedIn) { label = 'ログインしてください'; disabled = true; }
     else if (!state.canWrite) { label = '閲覧のみ'; disabled = true; }
     else if (state.busy) { label = '記録中…'; }
     btn.textContent = label; btn.disabled = disabled;
   }
 
   function renderSummary() {
-    // day chips
     var today = bizDay(Date.now());
     var days = [];
     state.sales.forEach(function (s) { var d = saleDay(s); if (d !== today && days.indexOf(d) === -1) days.push(d); });
@@ -725,7 +881,6 @@ tr.grand td{font-weight:700;border-bottom:0}
     $('fFree').textContent = yen(t.freed);
     $('fVoid').textContent = t.voided + '件';
 
-    // per-day table (all-time view only)
     var showPerDay = state.dayFilter === 'all' && state.sales.length > 0;
     $('perDayPanel').hidden = !showPerDay;
     if (showPerDay) {
@@ -737,7 +892,8 @@ tr.grand td{font-weight:700;border-bottom:0}
         return '<tr><td>' + esc(dayLabel(d)) + '</td><td class="num">' + x.paidCups + '杯</td><td class="num">' + x.ticketCups + '杯</td><td class="num">' + x.ice + '個</td><td class="num">' + yen(x.sales) + '</td></tr>';
       }).join('');
     }
-    $('csvBtn').hidden = !downloads;
+    // CSV: claude.ai では downloads 機能、サーバー版ではブラウザのダウンロード
+    $('csvBtn').hidden = !(downloads || state.mode === 'server' || state.mode === 'local');
   }
 
   function saleChips(s) {
@@ -768,7 +924,8 @@ tr.grand td{font-weight:700;border-bottom:0}
       var pay = (s.received !== null && s.received !== undefined) ? '<small>預 ' + yen(s.received) + '・釣 ' + yen(s.change) + '</small>' : '';
       html += '<li class="sale' + (s.voided ? ' voided' : '') + '">' +
         '<span class="sale-time">' + timeLabel(s.ts) + '</span>' +
-        '<div class="sale-items">' + saleChips(s) + (s.voided ? '<span class="voided-mark">取消済み</span>' : '') + '</div>' +
+        '<div class="sale-items">' + saleChips(s) + (s.voided ? '<span class="voided-mark">取消済み</span>' : '') +
+        (s.pending ? '<span class="pending-mark">未送信</span>' : '') + '</div>' +
         '<div class="sale-amt">' + yen(s.total) + pay + '</div>' + btn + '</li>';
     });
     html += '</ul>';
@@ -784,7 +941,6 @@ tr.grand td{font-weight:700;border-bottom:0}
       if (a.dataset.view === state.view) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
     document.body.classList.toggle('view-register', state.view === 'register');
-    $('checkoutBar').hidden = state.view !== 'register';
   }
 
   function renderAll() { renderStatus(); renderView(); renderCart(); renderData(); }
@@ -863,6 +1019,8 @@ tr.grand td{font-weight:700;border-bottom:0}
       renderCart();
     });
     $('checkoutBtn').addEventListener('click', checkout);
+    $('loginForm').addEventListener('submit', submitLogin);
+    $('logoutBtn').addEventListener('click', function () { loggedOut(''); });
 
     $('dayChips').addEventListener('click', function (e) {
       var b = e.target.closest('button'); if (!b) return;
@@ -881,20 +1039,25 @@ tr.grand td{font-weight:700;border-bottom:0}
       } catch (e) { fallback(); }
     });
     $('csvBtn').addEventListener('click', async function () {
-      if (!downloads) return;
       var label = state.dayFilter === 'all' ? 'all' : (state.dayFilter === 'today' ? bizDay(Date.now()) : state.dayFilter);
-      try {
-        await downloads.save({ filename: 'dope-register-' + label + '.csv', data: buildCsv(filteredSales()) });
-      } catch (e) {
-        if (!e || e.code !== 'declined') toast('CSVを保存できませんでした。', { error: true });
+      var filename = 'dope-register-' + label + '.csv';
+      var data = buildCsv(filteredSales());
+      if (downloads) {
+        try { await downloads.save({ filename: filename, data: data }); }
+        catch (e) { if (!e || e.code !== 'declined') toast('CSVを保存できませんでした。', { error: true }); }
+        return;
       }
+      var url = URL.createObjectURL(new Blob([data], { type: 'text/csv' }));
+      var a = document.createElement('a'); a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
     });
 
     $('historyList').addEventListener('click', function (e) {
       var b = e.target.closest('button'); if (!b) return;
       if (b.dataset.restore) { setVoided(b.dataset.restore, false); return; }
       var id = b.dataset.void; if (!id) return;
-      if (!state.canWrite) { toast('この端末は閲覧のみです。', { error: true }); return; }
+      if (!state.canWrite || !state.loggedIn) { toast('この端末では取り消せません。', { error: true }); return; }
       if (pendingVoid === id) {
         pendingVoid = null; clearTimeout(pendingVoidTimer); setVoided(id, true);
       } else {
@@ -911,7 +1074,7 @@ tr.grand td{font-weight:700;border-bottom:0}
   function start(saved) {
     saved = saved || {};
     var cart = saved.cart;
-    if (!cart) { try { cart = JSON.parse(localStorage.getItem(LS_CART) || 'null'); } catch (e) { cart = null; } }
+    if (!cart) { try { cart = JSON.parse(lsGet(LS_CART) || 'null'); } catch (e) { cart = null; } }
     if (cart) KEYS.forEach(function (k) { state.cart[k] = Math.max(0, Number(cart[k]) || 0); });
     if (saved.dayFilter) state.dayFilter = saved.dayFilter;
     bind();
