@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0B080C">
+<meta name="theme-color" content="#F5F5F7">
 <script>try{var t=JSON.parse(localStorage.getItem('dopepos:theme'));if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -12,9 +12,6 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon-180.png" type="image/png">
 <link rel="apple-touch-icon" href="/icon-180.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap">
 <link rel="stylesheet" href="/app.css">
 </head>
 <body data-view="register">
@@ -22,13 +19,16 @@
   <header class="bar">
     <img class="logo" src="/logo.webp" alt="DOPE" width="640" height="218">
     <button type="button" class="sync" id="sync" data-s="idle" aria-live="polite"><i></i><span>接続中</span></button>
-    <nav class="nav" aria-label="画面">
-      <a href="#register" data-view="register">レジ</a>
-      <a href="#history" data-view="history">履歴</a>
-      <a href="#stats" data-view="stats">集計</a>
-      <a href="#close" data-view="close">レジ締め</a>
-      <a href="#settings" data-view="settings">設定</a>
-    </nav>
+    <div class="bar-end">
+      <nav class="nav" aria-label="画面">
+        <a href="#register" data-view="register"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 14h2M14 14h2"/></svg><span>レジ</span></a>
+        <a href="#history" data-view="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg><span>履歴</span></a>
+        <a href="#stats" data-view="stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>集計</span></a>
+        <a href="#close" data-view="close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg><span>レジ締め</span></a>
+        <a href="#ai" data-view="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg><span>AI</span></a>
+      </nav>
+      <a class="icon-link" href="#settings" data-view="settings" aria-label="設定"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></a>
+    </div>
   </header>
 
   <main>
@@ -56,6 +56,20 @@
     <!-- レジ締め -->
     <section class="view" id="v-close" aria-label="レジ締め" hidden>
       <div id="closeBody"></div>
+    </section>
+
+    <!-- アシスタント -->
+    <section class="view" id="v-ai" aria-label="アシスタント" hidden>
+      <div class="ai">
+        <div class="ai-head"><h1>アシスタント</h1><span class="ai-meta" id="aiMeta"></span></div>
+        <div class="thread" id="thread" aria-live="polite"></div>
+        <form class="composer" id="composer">
+          <button type="button" class="icon-btn mic" id="mic" aria-label="音声で入力" aria-pressed="false" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+          <label class="sr" for="prompt">アシスタントへの依頼</label>
+          <textarea id="prompt" rows="1" placeholder="AI に頼む（例: 今日の売上は？）" enterkeyhint="send"></textarea>
+          <button type="submit" class="icon-btn send" id="send" aria-label="送る" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+        </form>
+      </div>
     </section>
 
     <!-- 設定 -->

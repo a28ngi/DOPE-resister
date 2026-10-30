@@ -8,8 +8,13 @@
  * 端末はオフラインでも会計でき、操作は端末の送信待ちに溜まる。操作には端末が作った ID が付くので、
  * 同じ操作が何度届いても結果は 1 回分になる。
  *
+ *   POST /api/ai     アシスタント（src/agent.js）
+ *   POST /api/ai/usage  アシスタントの利用額
+ *
  * 環境変数 PASSCODE を設定すると、そのコードを知っている端末だけが使える（未設定なら誰でも使える）。
  */
+
+import { runAgent, aiUsage, AI_SCHEMA } from './agent.js';
 
 const DAY_CUTOFF_HOURS = 6; // 深夜 0〜6 時の会計は前の営業日に入れる
 const JST_OFFSET_MS = 9 * 3600 * 1000;
@@ -29,7 +34,8 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS pos_items (
      id TEXT PRIMARY KEY, seq INTEGER NOT NULL, data TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS pos_shifts (
-     id TEXT PRIMARY KEY, seq INTEGER NOT NULL, data TEXT NOT NULL)`
+     id TEXT PRIMARY KEY, seq INTEGER NOT NULL, data TEXT NOT NULL)`,
+  ...AI_SCHEMA
 ];
 
 // DOPE の商品。設定画面で変えるまではこの内容で始まる。
@@ -214,6 +220,8 @@ export default {
     try { body = await request.json(); } catch { return json({ ok: false, error: 'bad_json' }, 400); }
     await ensureSchema(env.DB);
     if (url.pathname === '/api/sync') return apiSync(body || {}, env);
+    if (url.pathname === '/api/ai') return json(await runAgent(body || {}, env));
+    if (url.pathname === '/api/ai/usage') return json({ ok: true, ...(await aiUsage(env)) });
     return json({ ok: false, error: 'not_found' }, 404);
   }
 };

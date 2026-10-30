@@ -5,7 +5,7 @@
 
 const API = '/api';
 const SYNC_MS = 5000;
-const LS = { data: 'dopepos:data:v1', outbox: 'dopepos:outbox:v1', cart: 'dopepos:cart:v1', device: 'dopepos:device', pass: 'dopepos:pass', theme: 'dopepos:theme' };
+const LS = { data: 'dopepos:data:v1', outbox: 'dopepos:outbox:v1', cart: 'dopepos:cart:v1', device: 'dopepos:device', pass: 'dopepos:pass', theme: 'dopepos:theme', ai: 'dopepos:ai:v1' };
 const DAY_CUTOFF_HOURS = 6;
 const DENOMS = [10000, 5000, 1000, 500, 100, 50, 10];
 const VOID_REASONS = ['打ち間違い', '返金した', 'テスト', 'その他'];
@@ -235,6 +235,7 @@ function renderAll() {
   if (ui.view === 'stats') renderStats();
   if (ui.view === 'close' && !$('#v-close').contains(document.activeElement)) renderClose();
   if (ui.view === 'settings' && !$('#v-settings').contains(document.activeElement)) renderSettings();
+  if (ui.view === 'ai') renderAI();
   setSync(ui.sync.state, ui.sync.error);
 }
 
@@ -260,7 +261,7 @@ function renderRegister() {
         <div class="card-head"><h2>ご注文</h2>${t.qty ? '<button type="button" class="link" data-act="clear">すべてクリア</button>' : ''}</div>
         ${t.qty ? `<ul class="lines">${t.lines.map((l) => `
           <li class="line">
-            <span class="line-name"><span class="tag ${l.group}">${l.group === 'ticket' ? 'チケット' : '通常'}</span>${esc(l.name)}${l.option ? `<span class="opt">＋${esc(l.option)}</span>` : ''}</span>
+            <span class="line-name">${l.group === 'ticket' ? '<span class="tag">チケット</span>' : ''}${esc(l.name)}${l.option ? `<span class="opt">＋${esc(l.option)}</span>` : ''}</span>
             <span class="stepper"><button type="button" data-step="${esc(l.id)}" data-d="-1" aria-label="1つ減らす">−</button><span>${l.qty}</span><button type="button" data-step="${esc(l.id)}" data-d="1" aria-label="1つ増やす">＋</button></span>
             <span class="line-amt">${yen(l.price * l.qty)}</span>
           </li>`).join('')}</ul>` : '<p class="empty">商品をタップすると、ここに追加されます。同じボタンをもう一度タップすると数が増えます。</p>'}
@@ -309,11 +310,11 @@ function payHtml(t) {
   </div>`;
 }
 function tile(i) {
-  return `<button type="button" class="tile ${i.group === 'ticket' ? 'ticket' : ''}" data-item="${esc(i.id)}"
+  return `<button type="button" class="tile" data-item="${esc(i.id)}"
       aria-label="${esc(GROUPS[i.group].label)} ${esc(itemLabel(i))} ${i.price}円を追加">
     <span class="tile-name">${esc(i.name)}</span>
     ${i.option ? `<span class="opt">＋${esc(i.option)}</span>` : ''}
-    <span class="tile-price yen">${yen(i.price)}${i.listPrice > i.price ? `<s>${yen(i.listPrice)}</s>` : ''}</span>
+    <span class="tile-price">${yen(i.price)}${i.listPrice > i.price ? `<s>${yen(i.listPrice)}</s>` : ''}</span>
     <span class="badge" hidden></span>
   </button>`;
 }
@@ -340,7 +341,7 @@ function updateChange(t) {
 
 function showDone(order) {
   const el = $('#done');
-  const handoff = order.lines.map((l) => `<span class="${l.group === 'ticket' ? 'ticket' : ''}">${esc(itemLabel(l))} × ${l.qty}</span>`).join('');
+  const handoff = order.lines.map((l) => `<span>${esc(itemLabel(l))} × ${l.qty}</span>`).join('');
   const cash = order.method === 'cash' && order.change != null;
   el.innerHTML = `
     <div class="k" id="doneTitle">${cash ? 'お釣り' : order.method === 'free' ? 'チケット特典' : order.method === 'cashless' ? 'キャッシュレス' : 'お会計'}</div>
@@ -349,7 +350,7 @@ function showDone(order) {
     <div class="k">お渡しするもの</div>
     <div class="handoff">${handoff}</div>
     <div class="acts">
-      <button type="button" class="btn danger" data-act="undo">この会計を取り消す</button>
+      <button type="button" class="btn big danger" data-act="undo">取り消す</button>
       <button type="button" class="btn primary big" data-act="next">次のお客様</button>
     </div>`;
   el.dataset.order = order.id;
@@ -626,7 +627,7 @@ function applyTheme() {
   if (theme === 'light' || theme === 'dark') root.dataset.theme = theme;
   else delete root.dataset.theme;
   const dark = theme === 'dark' || (theme === 'auto' && DARK_MQ.matches);
-  $('meta[name="theme-color"]').content = dark ? '#0B080C' : '#FAF6F9';
+  $('meta[name="theme-color"]').content = dark ? '#0E0E10' : '#F5F5F7';
 }
 DARK_MQ.addEventListener('change', applyTheme);
 applyTheme();
@@ -639,7 +640,7 @@ function renderSettings() {
       <div class="card-head"><h2>商品</h2><button type="button" class="btn sm" data-act="add-item">＋ 商品を追加</button></div>
       <div class="item-rows">${list.map((i, n) => `
         <div class="item-row ${i.active ? '' : 'off'}">
-          <div><div class="nm">${i.group === 'ticket' ? '<span class="tag ticket">チケット</span>' : '<span class="tag">通常</span>'}${esc(i.name)}${i.option ? `<span class="opt">＋${esc(i.option)}</span>` : ''}</div>
+          <div><div class="nm">${i.group === 'ticket' ? '<span class="tag">チケット</span>' : ''}${esc(i.name)}${i.option ? `<span class="opt">＋${esc(i.option)}</span>` : ''}</div>
             <div class="pr">${yen(i.price)}${i.listPrice > i.price ? `（定価 ${yen(i.listPrice)}）` : ''}${i.active ? '' : ' ・ 非表示'}</div></div>
           <div class="ops">
             <button type="button" class="icon-btn" data-move="${esc(i.id)}" data-d="-1" ${n === 0 ? 'disabled' : ''} aria-label="上へ">↑</button>
@@ -715,6 +716,195 @@ async function askPasscode() {
   sync();
 }
 
+// ---- assistant ------------------------------------------------------------------
+// 会話は端末に保存し、毎回テキストだけをサーバーに送る。データを変える操作は「提案」で返ってくるので、
+// スタッフが「実行」を押したときだけ、通常の操作（commit）として記録する。
+const AI_SUGGEST = ['今日の売上は？', 'いちばん出ている時間帯は？', 'ドリンク2つとアイス付き1つ', 'レジ締めを手伝って', 'さっきの会計を取り消したい'];
+const ai = { msgs: lsGet(LS.ai, []), busy: false, usage: null, rec: null };
+const saveAI = () => lsSet(LS.ai, ai.msgs.slice(-60));
+
+async function enterAI() {
+  renderAI();
+  try {
+    const r = await fetch(API + '/ai/usage', { method: 'POST', headers: { 'content-type': 'application/json', 'x-passcode': passcode }, body: '{}' });
+    if (r.ok) ai.usage = await r.json();
+  } catch { /* オフライン */ }
+  renderAI();
+  if (!compact()) $('#prompt').focus();
+}
+function aiMeta() {
+  const u = ai.usage;
+  if (!u) return '';
+  if (!u.enabled) return 'API キー未設定';
+  return `今日 ${u.todayRequests} / ${u.dailyLimit} 回`;
+}
+function md(text) {
+  // 太字と箇条書きだけ扱う。HTML は必ずエスケープしてから整形する。
+  const lines = esc(text).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').split('\n');
+  let html = '', list = false;
+  for (const ln of lines) {
+    const m = ln.match(/^\s*[-・*]\s+(.*)/);
+    if (m) { if (!list) { html += '<ul>'; list = true; } html += `<li>${m[1]}</li>`; continue; }
+    if (list) { html += '</ul>'; list = false; }
+    if (ln.trim()) html += `<p>${ln}</p>`;
+  }
+  return html + (list ? '</ul>' : '');
+}
+function proposalText(a) {
+  if (a.type === 'void') return { t: a.voided ? '会計を取り消す' : '取消を戻す', d: `${a.summary}${a.voided ? ` ・ 理由: ${a.reason}` : ''}`, ok: a.voided ? '取り消す' : '戻す', danger: a.voided };
+  if (a.type === 'item') {
+    const it = a.item, b = a.before;
+    const now = `${itemLabel(it)} ${yen(it.price)}${it.listPrice > it.price ? `（定価 ${yen(it.listPrice)}）` : ''}${it.group === 'ticket' ? ' ・ チケット' : ''}${it.active ? '' : ' ・ 非表示'}`;
+    if (it.deleted) return { t: '商品を削除', d: b ? itemLabel(b) : now, ok: '削除', danger: true };
+    return { t: b ? '商品を変更' : '商品を追加', d: b ? `${itemLabel(b)} ${yen(b.price)} → ${now}` : now, ok: b ? '変更する' : '追加する' };
+  }
+  if (a.type === 'open_shift') return { t: 'レジを開ける', d: `準備金 ${yen(a.float)}`, ok: '開ける' };
+  if (a.type === 'close_shift') {
+    const s = openShift();
+    const counted = a.counts ? DENOMS.reduce((x, d) => x + d * (a.counts[d] || 0), 0) : a.counted || 0;
+    const exp = s ? s.float + shiftCash(s) : 0;
+    const diff = counted - exp;
+    return { t: 'レジを締める', d: s ? `数えた現金 ${yen(counted)} ／ あるはず ${yen(exp)}（${diff === 0 ? '過不足なし' : (diff > 0 ? '+' : '−') + yen(Math.abs(diff))}）` : '営業中のレジがありません', ok: '締める', disabled: !s };
+  }
+  return { t: a.type, d: '', ok: '実行' };
+}
+function renderAI() {
+  if (ui.view !== 'ai') return;
+  $('#aiMeta').textContent = aiMeta();
+  const off = ai.usage && !ai.usage.enabled;
+  const empty = !ai.msgs.length;
+  const html = (off ? `<div class="ai-off"><b>アシスタントはまだ使えません。</b><p class="fine">Gemini の API キーを Worker に登録してください:<br><code>npx wrangler secret put GEMINI_API_KEY --name dope-register</code></p></div>` : '') +
+    (empty ? `<p class="empty">売上の確認、注文の入力、取消やレジ締めの準備などを頼めます。データを変える操作は、確認ボタンを押すまで実行しません。</p>
+      <div class="suggest">${AI_SUGGEST.map((q) => `<button type="button" data-ask="${esc(q)}">${esc(q)}</button>`).join('')}</div>` : '') +
+    ai.msgs.map((m, i) => m.role === 'user'
+      ? `<div class="msg user">${esc(m.content)}</div>`
+      : `<div class="msg bot">${m.error ? `<p class="err">${esc(m.error)}</p>` : md(m.content)}
+          ${(m.actions || []).map((a, j) => {
+            if (a.type === 'set_cart') return `<span class="applied">カートに入れました（${a.lines.reduce((x, l) => x + l.qty, 0)}点）</span>`;
+            if (a.type === 'navigate') return '';
+            const p = proposalText(a);
+            return `<div class="proposal"><span class="t">${esc(p.t)}</span><span class="d">${esc(p.d)}</span>
+              ${a.state === 'done' ? '<span class="s ok">実行しました</span>' : a.state === 'no' ? '<span class="s no">やめました</span>' :
+              `<div class="acts"><button type="button" class="btn sm ${p.danger ? 'danger' : 'primary'}" data-ai-ok="${i}:${j}" ${p.disabled ? 'disabled' : ''}>${esc(p.ok)}</button><button type="button" class="btn sm" data-ai-no="${i}:${j}">やめる</button></div>`}
+            </div>`;
+          }).join('')}</div>`).join('') +
+    (ai.busy ? '<div class="msg bot"><span class="typing" aria-label="考えています"><i></i><i></i><i></i></span></div>' : '') +
+    (!empty && !ai.busy ? '<div><button type="button" class="link" data-act="ai-reset">新しい会話にする</button></div>' : '');
+  setHtml($('#thread'), html);
+  $('#send').disabled = ai.busy || !$('#prompt').value.trim();
+}
+async function askAI(text) {
+  text = text.trim();
+  if (!text || ai.busy) return;
+  ai.msgs.push({ role: 'user', content: text });
+  ai.busy = true;
+  $('#prompt').value = '';
+  autosize();
+  renderAI();
+  window.scrollTo(0, document.body.scrollHeight);
+  const history = ai.msgs.filter((m) => !m.error).map((m) => ({ role: m.role, content: m.content })).slice(-16);
+  const cart = cartLines().map((l) => ({ item: itemLabel(l), group: l.group, qty: l.qty }));
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 90000);
+  let reply;
+  try {
+    const r = await fetch(API + '/ai', {
+      method: 'POST', signal: ctrl.signal,
+      headers: { 'content-type': 'application/json', 'x-passcode': passcode },
+      body: JSON.stringify({ messages: history, context: { view: 'ai', device, pending: outbox.length, cart } })
+    });
+    if (r.status === 401) { askPasscode(); throw new Error('パスコードが必要です'); }
+    const data = await r.json();
+    reply = data.ok ? { role: 'assistant', content: data.text || '', actions: data.actions || [] }
+      : { role: 'assistant', content: '', error: data.message || 'エラーが起きました', actions: data.actions || [] };
+  } catch (e) {
+    reply = { role: 'assistant', content: '', error: e.name === 'AbortError' ? '時間がかかりすぎたので止めました。もう一度どうぞ。' : navigator.onLine === false ? 'オフラインのため使えません。' : String(e.message || e) };
+  } finally {
+    clearTimeout(timer);
+  }
+  ai.busy = false;
+  ai.msgs.push(reply);
+  saveAI();
+  // カートと画面切り替えはすぐ反映する（あとから直しやすい操作なので確認なし）
+  let go = null;
+  for (const a of reply.actions || []) {
+    if (a.type === 'set_cart') {
+      ui.cart = {};
+      for (const l of a.lines) if (db.items[l.item_id]) ui.cart[l.item_id] = l.qty;
+      ui.tendered = null; ui.tenderedText = ''; payOpen = false;
+      saveCart();
+      go = 'register';
+    } else if (a.type === 'navigate') go = a.view;
+  }
+  enterAIUsageLater();
+  if (go && go !== 'ai') { toast(reply.content ? reply.content.split('\n')[0].slice(0, 60) : '画面を切り替えました'); location.hash = '#' + go; }
+  else renderAI();
+  window.scrollTo(0, document.body.scrollHeight);
+}
+function enterAIUsageLater() {
+  fetch(API + '/ai/usage', { method: 'POST', headers: { 'content-type': 'application/json', 'x-passcode': passcode }, body: '{}' })
+    .then((r) => (r.ok ? r.json() : null)).then((u) => { if (u) { ai.usage = u; renderAI(); } }).catch(() => {});
+}
+function runProposal(i, j) {
+  const a = ai.msgs[i]?.actions?.[j];
+  if (!a || a.state) return;
+  if (a.type === 'void') {
+    commit({ type: 'void', id: a.id, voided: a.voided, reason: a.reason, at: Date.now() });
+  } else if (a.type === 'item') {
+    const it = { ...a.item };
+    if (!it.id) { it.id = uid('i'); it.sort = (items().at(-1)?.sort || 0) + 10; }
+    commit({ type: 'item', item: it });
+  } else if (a.type === 'open_shift') {
+    if (openShift()) return toast('もう営業中です', { bad: true });
+    commit({ type: 'shift', shift: { id: uid('s'), openedAt: Date.now(), openedBy: device, float: a.float, closedAt: null } });
+  } else if (a.type === 'close_shift') {
+    const s = openShift();
+    if (!s) return toast('営業中のレジがありません', { bad: true });
+    const counts = a.counts || {};
+    const counted = a.counts ? DENOMS.reduce((x, d) => x + d * (counts[d] || 0), 0) : a.counted || 0;
+    commit({ type: 'shift', shift: { ...s, closedAt: Date.now(), closedBy: device, counts, counted, expected: s.float + shiftCash(s), note: a.note || '' } });
+  }
+  a.state = 'done';
+  saveAI();
+  renderAI();
+  toast('実行しました');
+}
+function autosize() {
+  const t = $('#prompt');
+  t.style.height = 'auto';
+  t.style.height = Math.min(160, t.scrollHeight) + 'px';
+}
+function setupMic() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return;
+  const btn = $('#mic');
+  btn.hidden = false;
+  btn.addEventListener('click', () => {
+    if (ai.rec) { ai.rec.stop(); return; }
+    const rec = new SR();
+    rec.lang = 'ja-JP';
+    rec.interimResults = true;
+    ai.rec = rec;
+    btn.setAttribute('aria-pressed', 'true');
+    let finalText = '';
+    rec.onresult = (e) => {
+      let interim = '';
+      for (let k = e.resultIndex; k < e.results.length; k++) {
+        if (e.results[k].isFinal) finalText += e.results[k][0].transcript; else interim += e.results[k][0].transcript;
+      }
+      $('#prompt').value = finalText + interim;
+      autosize();
+    };
+    rec.onend = () => {
+      ai.rec = null;
+      btn.setAttribute('aria-pressed', 'false');
+      if (finalText.trim()) askAI(finalText);
+    };
+    rec.onerror = () => { ai.rec = null; btn.setAttribute('aria-pressed', 'false'); };
+    rec.start();
+  });
+}
+
 // ---- dialogs / toast ------------------------------------------------------------
 function ask({ title, body = '', choices, input, value = '', form, ok = 'OK', danger = false, extra = null }) {
   const dlg = $('#sheet');
@@ -765,15 +955,16 @@ function toast(msg, { action, onAction, ms = 3500, bad = false } = {}) {
 }
 
 // ---- routing & events -----------------------------------------------------------
-const VIEWS = ['register', 'history', 'stats', 'close', 'settings'];
+const VIEWS = ['register', 'history', 'stats', 'close', 'ai', 'settings'];
 function route() {
   const v = location.hash.slice(1);
   ui.view = VIEWS.includes(v) ? v : 'register';
   document.body.dataset.view = ui.view;
   for (const x of VIEWS) $('#v-' + x).hidden = x !== ui.view;
-  $$('.nav a').forEach((a) => (a.dataset.view === ui.view ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
+  $$('.bar a[data-view]').forEach((a) => (a.dataset.view === ui.view ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
   renderAll();
   if (ui.view === 'settings') renderSettings();
+  if (ui.view === 'ai') enterAI();
   window.scrollTo(0, 0);
 }
 
@@ -797,6 +988,9 @@ document.addEventListener('click', (e) => {
   if (d.float) { const i = $('#openForm input[name=float]'); i.value = d.float; return; }
   if (d.count) { ui.counts[d.count] = Math.max(0, (ui.counts[d.count] || 0) + Number(d.d)); $('#c' + d.count).value = ui.counts[d.count] || ''; return updateCountDiff(); }
   if (d.theme) { theme = d.theme; lsSet(LS.theme, theme); applyTheme(); return renderSettings(); }
+  if (d.ask) return askAI(d.ask);
+  if (d.aiOk) { const [i, j] = d.aiOk.split(':').map(Number); return runProposal(i, j); }
+  if (d.aiNo) { const [i, j] = d.aiNo.split(':').map(Number); const a = ai.msgs[i]?.actions?.[j]; if (a) { a.state = 'no'; saveAI(); renderAI(); } return; }
   if (d.edit) return editItem(d.edit);
   if (d.move) return moveItem(d.move, Number(d.d));
   switch (d.act) {
@@ -828,6 +1022,7 @@ document.addEventListener('click', (e) => {
     case 'close-shift': return closeShift();
     case 'add-item': return editItem(null);
     case 'sync-now': return sync();
+    case 'ai-reset': ai.msgs = []; saveAI(); return renderAI();
     case 'passcode': return askPasscode();
   }
 });
@@ -842,6 +1037,9 @@ document.addEventListener('input', (e) => {
     ui.tendered = digits ? Number(digits) : null;
     $$('[data-tender]').forEach((b) => b.setAttribute('aria-pressed', 'false'));
     renderRegister();
+  } else if (t.id === 'prompt') {
+    autosize();
+    $('#send').disabled = ai.busy || !t.value.trim();
   } else if (t.id === 'historyQuery') {
     ui.historyQuery = t.value;
     renderHistory();
@@ -857,6 +1055,9 @@ document.addEventListener('submit', (e) => {
     const v = Math.max(0, Math.floor(Number(String(f.float.value).replace(/[^\d]/g, '')) || 0));
     commit({ type: 'shift', shift: { id: uid('s'), openedAt: Date.now(), openedBy: device, float: v, closedAt: null } });
     toast(`準備金 ${yen(v)} でレジを開けました`);
+  } else if (f.id === 'composer') {
+    e.preventDefault();
+    askAI($('#prompt').value);
   } else if (f.id === 'deviceForm') {
     e.preventDefault();
     device = f.device.value.trim().slice(0, 30);
@@ -865,6 +1066,8 @@ document.addEventListener('submit', (e) => {
   }
 });
 document.addEventListener('keydown', (e) => {
+  // Enter で送信、Shift+Enter で改行（日本語変換中の Enter は送らない）
+  if (e.target.id === 'prompt' && e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); askAI(e.target.value); return; }
   if (payOpen && e.key === 'Escape') { payOpen = false; renderRegister(); return; }
   if (!$('#done').hidden && (e.key === 'Enter' || e.key === 'Escape' || e.key === ' ')) { e.preventDefault(); $('#done').hidden = true; return; }
   if (e.key === 'Enter' && ui.view === 'register' && !$('#sheet').open) {
@@ -876,6 +1079,7 @@ window.addEventListener('hashchange', route);
 window.addEventListener('online', () => sync());
 document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(); });
 
+setupMic();
 route();
 sync();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
