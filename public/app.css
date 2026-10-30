@@ -5,13 +5,37 @@
   --pink:#FF2EB5; --pink-ink:#16030F; --pink-soft:#2C0A21; --pink-line:#7A1A59;
   --silver:#EDE6EF; --silver-ink:#120D14;
   --vanilla:#F4E7A1; --vanilla-ink:#2B2306;
-  --ok:#4ADE9A; --warn:#FFB45E; --bad:#FF5C72; --cyan:#64D2FF;
+  --ok:#4ADE9A; --warn:#FFB45E; --bad:#FF5C72; --bad-ink:#16030A; --cyan:#64D2FF; --cyan-soft:#0F2A36;
+  --veil:rgba(11,8,12,.97); --bar-bg:rgba(21,16,23,.97); --scrim:rgba(0,0,0,.65);
   --r:16px; --r-sm:10px;
   --f-display:"Anton","Zen Kaku Gothic New","Hiragino Sans",sans-serif;
   --f-body:"Zen Kaku Gothic New","Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo",sans-serif;
   --gut:max(16px,env(safe-area-inset-left,0px));
   --gut-r:max(16px,env(safe-area-inset-right,0px));
   color-scheme:dark;
+}
+/* ライトモード: 端末の設定に合わせる。「設定」で固定もできる（html の data-theme） */
+@media (prefers-color-scheme:light){
+  :root:not([data-theme="dark"]){
+  --bg:#FAF6F9; --s1:#FFFFFF; --s2:#F4EEF3; --s3:#EAE1E8; --line:#E8DEE6; --line-2:#D4C6D0;
+  --ink:#1B1219; --ink-2:#4B3F49; --muted:#7A6D78;
+  --pink:#D6088F; --pink-ink:#FFFFFF; --pink-soft:#FFE4F4; --pink-line:#F2A6D6;
+  --silver:#1B1219; --silver-ink:#FFFFFF;
+  --vanilla:#F6E89A; --vanilla-ink:#3A2F05;
+  --ok:#0E8F55; --warn:#B45F00; --bad:#D42A45; --bad-ink:#FFFFFF; --cyan:#0A7FB0; --cyan-soft:#DDF1FA;
+  --veil:rgba(250,246,249,.97); --bar-bg:rgba(255,255,255,.96); --scrim:rgba(27,18,25,.35);
+  color-scheme:light;
+  }
+}
+:root[data-theme="light"]{
+  --bg:#FAF6F9; --s1:#FFFFFF; --s2:#F4EEF3; --s3:#EAE1E8; --line:#E8DEE6; --line-2:#D4C6D0;
+  --ink:#1B1219; --ink-2:#4B3F49; --muted:#7A6D78;
+  --pink:#D6088F; --pink-ink:#FFFFFF; --pink-soft:#FFE4F4; --pink-line:#F2A6D6;
+  --silver:#1B1219; --silver-ink:#FFFFFF;
+  --vanilla:#F6E89A; --vanilla-ink:#3A2F05;
+  --ok:#0E8F55; --warn:#B45F00; --bad:#D42A45; --bad-ink:#FFFFFF; --cyan:#0A7FB0; --cyan-soft:#DDF1FA;
+  --veil:rgba(250,246,249,.97); --bar-bg:rgba(255,255,255,.96); --scrim:rgba(27,18,25,.35);
+  color-scheme:light;
 }
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -124,7 +148,7 @@ button:disabled{cursor:default}
 .go:disabled{background:var(--s3);color:var(--muted)}
 
 /* ---- pay sheet (1列のとき) ---- */
-.pay-sheet{position:fixed;inset:0;z-index:30;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.6);animation:fade .14s ease-out}
+.pay-sheet{position:fixed;inset:0;z-index:30;display:flex;align-items:flex-end;justify-content:center;background:var(--scrim);animation:fade .14s ease-out}
 @keyframes fade{from{opacity:0}to{opacity:1}}
 .pay-panel{width:min(640px,100%);max-height:calc(100dvh - 40px);overflow-y:auto;padding:18px var(--gut-r) calc(18px + env(safe-area-inset-bottom,0px)) var(--gut);
   border-radius:22px 22px 0 0;background:var(--s1);border:1px solid var(--line-2);border-bottom:0;animation:up .18s ease-out}
@@ -139,7 +163,7 @@ button:disabled{cursor:default}
 /* ---- done overlay ---- */
 .done{position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
   padding:calc(env(safe-area-inset-top,0px) + 24px) 24px calc(env(safe-area-inset-bottom,0px) + 24px);
-  background:rgba(11,8,12,.97);text-align:center;animation:pop .16s ease-out}
+  background:var(--veil);text-align:center;animation:pop .16s ease-out}
 @keyframes pop{from{opacity:0;transform:scale(.98)}to{opacity:1;transform:none}}
 .done .k{font-size:15px;font-weight:900;letter-spacing:.2em;color:var(--muted)}
 .done .big{font-size:clamp(72px,20vw,168px);line-height:1;color:var(--pink)}
@@ -185,7 +209,7 @@ button:disabled{cursor:default}
 .order-detail{padding:0 14px 14px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;font-size:13px;color:var(--ink-2)}
 .order-detail .btn{margin-left:auto}
 .m{font-size:11px;font-weight:900;padding:1px 6px;border-radius:4px;background:var(--s3);color:var(--ink-2)}
-.m.cashless{background:#0F2A36;color:var(--cyan)}
+.m.cashless{background:var(--cyan-soft);color:var(--cyan)}
 .m.free{background:var(--pink-soft);color:var(--pink)}
 
 /* ---- stats ---- */
@@ -261,7 +285,7 @@ kbd{font-family:var(--f-body);font-size:12px;padding:1px 6px;border-radius:5px;b
 
 /* ---- sheet / toast ---- */
 .sheet{width:min(520px,calc(100% - 24px));max-height:calc(100dvh - 40px);padding:0;border:1px solid var(--line-2);border-radius:20px;background:var(--s1);color:var(--ink)}
-.sheet::backdrop{background:rgba(0,0,0,.7)}
+.sheet::backdrop{background:var(--scrim)}
 .sheet form{padding:20px;display:flex;flex-direction:column;gap:14px}
 .sheet h2{margin:0;font-size:18px}
 .sheet p{margin:0;color:var(--ink-2)}
@@ -269,7 +293,7 @@ kbd{font-family:var(--f-body);font-size:12px;padding:1px 6px;border-radius:5px;b
 .toasts{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 12px);transform:translateX(-50%);z-index:50;display:flex;flex-direction:column;gap:8px;
   width:max-content;max-width:calc(100% - 32px);pointer-events:none}
 .toast{pointer-events:auto;display:flex;align-items:center;gap:12px;padding:12px 12px 12px 16px;border-radius:12px;background:var(--s3);border:1px solid var(--line-2);font-weight:700;animation:pop .16s ease-out}
-.toast.bad{background:var(--bad);color:#16030A;border-color:var(--bad)}
+.toast.bad{background:var(--bad);color:var(--bad-ink);border-color:var(--bad)}
 .toast button{border:1px solid currentColor;border-radius:8px;padding:6px 10px;font-weight:900}
 
 /* ---- responsive ---- */
@@ -277,7 +301,7 @@ kbd{font-family:var(--f-body);font-size:12px;padding:1px 6px;border-radius:5px;b
 @media (max-width:759px),(max-width:1099px) and (orientation:portrait){
   body[data-view="register"] .shell{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 120px)}
   .pay-bar{position:fixed;left:0;right:0;bottom:0;z-index:20;border-radius:0;border-width:1px 0 0;
-    padding:12px var(--gut-r) calc(12px + env(safe-area-inset-bottom,0px)) var(--gut);background:rgba(21,16,23,.97);
+    padding:12px var(--gut-r) calc(12px + env(safe-area-inset-bottom,0px)) var(--gut);background:var(--bar-bg);
     backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
 }
 @media (max-width:759px){

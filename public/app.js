@@ -5,7 +5,7 @@
 
 const API = '/api';
 const SYNC_MS = 5000;
-const LS = { data: 'dopepos:data:v1', outbox: 'dopepos:outbox:v1', cart: 'dopepos:cart:v1', device: 'dopepos:device', pass: 'dopepos:pass' };
+const LS = { data: 'dopepos:data:v1', outbox: 'dopepos:outbox:v1', cart: 'dopepos:cart:v1', device: 'dopepos:device', pass: 'dopepos:pass', theme: 'dopepos:theme' };
 const DAY_CUTOFF_HOURS = 6;
 const DENOMS = [10000, 5000, 1000, 500, 100, 50, 10];
 const VOID_REASONS = ['打ち間違い', '返金した', 'テスト', 'その他'];
@@ -617,6 +617,20 @@ async function closeShift() {
   toast('レジを締めました');
 }
 
+// ---- theme ----------------------------------------------------------------------
+const THEMES = { auto: '端末に合わせる', light: 'ライト', dark: 'ダーク' };
+let theme = lsGet(LS.theme, 'auto');
+const DARK_MQ = window.matchMedia('(prefers-color-scheme: dark)');
+function applyTheme() {
+  const root = document.documentElement;
+  if (theme === 'light' || theme === 'dark') root.dataset.theme = theme;
+  else delete root.dataset.theme;
+  const dark = theme === 'dark' || (theme === 'auto' && DARK_MQ.matches);
+  $('meta[name="theme-color"]').content = dark ? '#0B080C' : '#FAF6F9';
+}
+DARK_MQ.addEventListener('change', applyTheme);
+applyTheme();
+
 // ---- settings -------------------------------------------------------------------
 function renderSettings() {
   const list = items();
@@ -638,6 +652,8 @@ function renderSettings() {
     </div>
     <div class="card">
       <div class="card-head"><h2>この端末</h2></div>
+      <div class="label" style="margin-bottom:6px">画面の色</div>
+      <div class="seg" role="group" aria-label="画面の色" style="margin-bottom:16px">${Object.entries(THEMES).map(([k, l]) => `<button type="button" data-theme="${k}" aria-pressed="${theme === k}">${l}</button>`).join('')}</div>
       <form class="form" id="deviceForm">
         <label class="l">端末の名前<span class="field"><input name="device" value="${esc(device)}" placeholder="例: 受付iPad" maxlength="30"></span></label>
         <button class="btn" type="submit">保存</button>
@@ -780,6 +796,7 @@ document.addEventListener('click', (e) => {
   if (d.unvoid) { commit({ type: 'void', id: d.unvoid, voided: false, at: Date.now() }); return toast('取消を戻しました'); }
   if (d.float) { const i = $('#openForm input[name=float]'); i.value = d.float; return; }
   if (d.count) { ui.counts[d.count] = Math.max(0, (ui.counts[d.count] || 0) + Number(d.d)); $('#c' + d.count).value = ui.counts[d.count] || ''; return updateCountDiff(); }
+  if (d.theme) { theme = d.theme; lsSet(LS.theme, theme); applyTheme(); return renderSettings(); }
   if (d.edit) return editItem(d.edit);
   if (d.move) return moveItem(d.move, Number(d.d));
   switch (d.act) {
