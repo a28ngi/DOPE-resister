@@ -165,17 +165,6 @@ tr.grand td{font-weight:700;border-bottom:0}
 .btn{display:inline-flex;align-items:center;text-decoration:none;color:var(--ink)}
 .pending-mark{font-size:11px;font-weight:700;color:var(--warn)}
 
-/* login */
-.login{position:fixed;inset:0;z-index:40;display:grid;place-items:center;overflow-y:auto;background:var(--bg);padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
-.login-card{width:100%;max-width:380px;display:flex;flex-direction:column;gap:16px;padding:26px 22px;border-radius:18px;background:var(--surface);box-shadow:var(--shadow)}
-.login-card .logo{width:220px}
-.login-card .brand{flex-direction:column;align-items:flex-start;gap:2px}
-.login-lead{margin:0;color:var(--muted);font-size:14px}
-.field{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--muted)}
-.field input{height:50px;padding:0 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-family:var(--f-num);font-size:18px;letter-spacing:normal}
-.field input:focus{outline:3px solid var(--accent);outline-offset:1px}
-.login-error{margin:0;padding:10px 12px;border-radius:10px;background:var(--ticket-soft);color:var(--danger);font-weight:700;font-size:13px}
-.login-btn{flex:none;margin-left:0;width:100%}
 
 /* toast */
 .toast{border:1px solid var(--line);position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 12px);transform:translateX(-50%);z-index:30;display:flex;align-items:center;gap:12px;width:max-content;max-width:calc(100% - 32px);padding:12px 12px 12px 16px;border-radius:12px;background:var(--surface-2);color:var(--ink);font-weight:500}
@@ -214,7 +203,6 @@ tr.grand td{font-weight:700;border-bottom:0}
   <header class="top">
     <h1 class="brand"><span class="logo" role="img" aria-label="DOPE"></span><span>レジ</span></h1>
     <span class="status" id="status" data-s="connecting">接続中…</span>
-    <button type="button" class="link-btn" id="logoutBtn" hidden>ログアウト</button>
     <nav class="tabs" aria-label="画面切り替え">
       <a href="#register" data-view="register" aria-current="page">レジ</a>
       <a href="#summary" data-view="summary">集計</a>
@@ -344,22 +332,6 @@ tr.grand td{font-weight:700;border-bottom:0}
   </main>
 </div>
 
-<div class="login" id="login" hidden>
-  <form class="login-card" id="loginForm" novalidate>
-    <h2 class="brand"><span class="logo" role="img" aria-label="DOPE"></span><span>レジ</span></h2>
-    <p class="login-lead">スタッフ用のIDとパスワードでログインしてください。</p>
-    <label class="field" for="loginId">ID
-      <input id="loginId" name="username" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false">
-    </label>
-    <label class="field" for="loginPw">パスワード
-      <input id="loginPw" name="password" type="password" autocomplete="current-password">
-    </label>
-    <p class="login-error" id="loginError" role="alert" hidden></p>
-    <button type="submit" class="checkout-btn login-btn" id="loginBtn">ログイン</button>
-    <p class="fine">一度ログインすると、この端末では30日間そのまま使えます。</p>
-  </form>
-</div>
-
 <div class="toast" id="toast" role="status" aria-live="polite" hidden><span id="toastMsg"></span><button type="button" id="toastAction" hidden></button></div>
 
 <script>
@@ -374,7 +346,6 @@ tr.grand td{font-weight:700;border-bottom:0}
   var SYNC_MS = 10000;      // サーバー版で他の端末の会計を取りに行く間隔
   var LS_SALES = 'dope-register:sales:v1';
   var LS_CART = 'dope-register:cart:v1';
-  var LS_TOKEN = 'dope-register:token:v1';
   var LS_OUTBOX = 'dope-register:outbox:v1';
   // Cloudflare Worker から配信されたときだけ設定される（例: "/api"）
   var API_BASE = typeof window.DOPE_API === 'string' ? window.DOPE_API : null;
@@ -399,7 +370,6 @@ tr.grand td{font-weight:700;border-bottom:0}
     mode: 'connecting',        // connecting | server | shared | local
     syncError: false,
     canWrite: true,
-    loggedIn: true,
     view: 'register',
     dayFilter: 'today',
     busy: false
@@ -409,7 +379,7 @@ tr.grand td{font-weight:700;border-bottom:0}
   var localOk = true;
   var pendingVoid = null, pendingVoidTimer = null;
   // server mode
-  var token = null, serverSales = [], serverVersion = null, outbox = [], syncing = false, syncAgain = false;
+  var serverSales = [], serverVersion = null, outbox = [], syncing = false, syncAgain = false;
 
   var $ = function (id) { return document.getElementById(id); };
 
@@ -461,7 +431,6 @@ tr.grand td{font-weight:700;border-bottom:0}
     var r = await fetch(API_BASE + '/' + fn, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
     });
-    if (r.status === 401) return { ok: false, error: 'auth' };
     if (!r.ok && r.status !== 429) throw new Error('http ' + r.status);
     return r.json();
   }
@@ -488,12 +457,12 @@ tr.grand td{font-weight:700;border-bottom:0}
     syncNow();
   }
   async function syncNow() {
-    if (state.mode !== 'server' || !token) return;
+    if (state.mode !== 'server') return;
     if (syncing) { syncAgain = true; return; }
     syncing = true;
     var ops = outbox.slice();
     try {
-      var res = await api('sync', { token: token, ops: ops, version: serverVersion });
+      var res = await api('sync', { ops: ops, version: serverVersion });
       if (res && res.ok) {
         var done = {};
         (res.applied || []).forEach(function (id) { done[id] = true; });
@@ -502,8 +471,6 @@ tr.grand td{font-weight:700;border-bottom:0}
         if (res.sales) serverSales = res.sales;
         serverVersion = res.version;
         state.loaded = true; state.syncError = false;
-      } else if (res && res.error === 'auth') {
-        loggedOut('ログインの期限が切れました。もう一度ログインしてください。');
       } else {
         state.syncError = true;
       }
@@ -511,38 +478,6 @@ tr.grand td{font-weight:700;border-bottom:0}
     syncing = false;
     mergeServer(); renderData(); renderStatus();
     if (syncAgain) { syncAgain = false; syncNow(); }
-  }
-  function showLogin(msg) {
-    $('login').hidden = false;
-    $('loginError').hidden = !msg; $('loginError').textContent = msg || '';
-  }
-  function loggedOut(msg) {
-    token = null; lsDel(LS_TOKEN); state.loggedIn = false;
-    showLogin(msg); renderStatus(); renderCheckout();
-  }
-  async function submitLogin(e) {
-    e.preventDefault();
-    var id = $('loginId').value.trim(), pw = $('loginPw').value;
-    if (!id || !pw) { showLogin('IDとパスワードを入力してください。'); return; }
-    var btn = $('loginBtn');
-    btn.disabled = true; btn.textContent = '確認中…';
-    try {
-      var res = await api('login', { id: id, password: pw });
-      if (res && res.ok) {
-        token = res.token; lsSet(LS_TOKEN, token); state.loggedIn = true;
-        $('loginPw').value = ''; $('login').hidden = true;
-        renderAll(); syncNow();
-      } else if (res && res.error === 'locked') {
-        showLogin('ログインの失敗が続いたので、10分ほど待ってからもう一度試してください。');
-      } else if (res && res.error === 'not_configured') {
-        showLogin('サーバーにIDとパスワードがまだ設定されていません（LOGIN_ID / LOGIN_PASSWORD）。');
-      } else {
-        showLogin('IDかパスワードが違います。');
-      }
-    } catch (err) {
-      showLogin('サーバーにつながりません。電波を確認して、もう一度試してください。');
-    }
-    btn.disabled = false; btn.textContent = 'ログイン';
   }
 
   // ---- storage (claude.ai / この端末のみ) ---------------------------------------
@@ -617,11 +552,8 @@ tr.grand td{font-weight:700;border-bottom:0}
   async function connect() {
     if (API_BASE !== null) {
       state.mode = 'server';
-      token = lsGet(LS_TOKEN);
       outbox = loadOutbox();
-      state.loggedIn = !!token;
       mergeServer();
-      if (!token) showLogin();
       renderAll();
       syncNow();
       setInterval(function () { if (!document.hidden) syncNow(); }, SYNC_MS);
@@ -668,7 +600,7 @@ tr.grand td{font-weight:700;border-bottom:0}
     renderCart();
   }
   function canCheckout() {
-    return state.mode !== 'connecting' && state.canWrite && state.loggedIn && !state.busy;
+    return state.mode !== 'connecting' && state.canWrite && !state.busy;
   }
 
   async function checkout() {
@@ -749,8 +681,7 @@ tr.grand td{font-weight:700;border-bottom:0}
     var el = $('status'), s, text;
     if (state.mode === 'server') {
       var n = outbox.length;
-      if (!state.loggedIn) { s = 'connecting'; text = 'ログインしてください'; }
-      else if (state.syncError) { s = 'local'; text = n ? 'オフライン・未送信 ' + n + '件' : 'オフライン'; }
+      if (state.syncError) { s = 'local'; text = n ? 'オフライン・未送信 ' + n + '件' : 'オフライン'; }
       else if (n) { s = 'local'; text = '送信中・' + n + '件'; }
       else if (!state.loaded) { s = 'connecting'; text = '接続中…'; }
       else { s = 'shared'; text = '全端末で共有中'; }
@@ -763,7 +694,6 @@ tr.grand td{font-weight:700;border-bottom:0}
     el.dataset.s = s; el.textContent = text;
     $('readonlyNotice').hidden = state.canWrite || state.mode === 'connecting';
     $('localNotice').hidden = state.mode !== 'local';
-    $('logoutBtn').hidden = !(state.mode === 'server' && state.loggedIn);
   }
 
   function renderTiles() {
@@ -824,7 +754,6 @@ tr.grand td{font-weight:700;border-bottom:0}
     var short = recv !== null && recv < t.total;
     var btn = $('checkoutBtn'), label = '会計する', disabled = !t.cups || short || state.busy;
     if (state.mode === 'connecting') { label = '接続中…'; disabled = true; }
-    else if (!state.loggedIn) { label = 'ログインしてください'; disabled = true; }
     else if (!state.canWrite) { label = '閲覧のみ'; disabled = true; }
     else if (state.busy) { label = '記録中…'; }
     btn.textContent = label; btn.disabled = disabled;
@@ -1004,8 +933,6 @@ tr.grand td{font-weight:700;border-bottom:0}
       renderCart();
     });
     $('checkoutBtn').addEventListener('click', checkout);
-    $('loginForm').addEventListener('submit', submitLogin);
-    $('logoutBtn').addEventListener('click', function () { loggedOut(''); });
 
     $('dayChips').addEventListener('click', function (e) {
       var b = e.target.closest('button'); if (!b) return;
@@ -1042,7 +969,7 @@ tr.grand td{font-weight:700;border-bottom:0}
       var b = e.target.closest('button'); if (!b) return;
       if (b.dataset.restore) { setVoided(b.dataset.restore, false); return; }
       var id = b.dataset.void; if (!id) return;
-      if (!state.canWrite || !state.loggedIn) { toast('この端末では取り消せません。', { error: true }); return; }
+      if (!state.canWrite) { toast('この端末では取り消せません。', { error: true }); return; }
       if (pendingVoid === id) {
         pendingVoid = null; clearTimeout(pendingVoidTimer); setVoided(id, true);
       } else {

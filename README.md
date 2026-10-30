@@ -2,7 +2,7 @@
 
 ドリンク販売用のシンプルな会計システム。
 
-- 本番（ID/パスワードでログイン）: Cloudflare Workers ＋ D1 で動かす（下の「Cloudflare に公開する」）
+- 本番: https://dope-register.a28ngi.workers.dev/ （Cloudflare Workers ＋ D1、ログインなし）
 - お試し版（claude.ai アカウントで利用）: https://claude.ai/artifact/FPercdpqnCHx9ua6TvxiTS
 
 ## 料金ルール
@@ -35,7 +35,7 @@
 ファイル構成:
 
 - `register.html` … 画面（全バージョン共通）
-- `cloudflare/server.js` … ログインと保存の処理
+- `cloudflare/server.js` … 保存の処理
 - `cloudflare/worker.js` … 上の 2 つをまとめた貼り付け用ファイル（`node cloudflare/build.mjs` で作り直す）
 
 ダッシュボードで公開する手順:
@@ -44,7 +44,6 @@
 2. 「Workers & Pages」→ 作成 → Worker（Hello World）を名前 `dope-register` で作成してデプロイ
 3. 「コードを編集」で中身を全部消し、`cloudflare/worker.js` の中身を貼り付けてデプロイ
 4. Worker の「設定」→「バインディング」→ D1 データベースを追加（変数名 `DB`、データベース `dope-register`）
-5. 「設定」→「変数とシークレット」→ 種類「シークレット」で `LOGIN_ID` と `LOGIN_PASSWORD` を追加
-6. `https://dope-register.<あなたのサブドメイン>.workers.dev` を開いてログイン
+5. `https://dope-register.<あなたのサブドメイン>.workers.dev` を開く
 
-ID・パスワードはコードには書かず、Cloudflare のシークレットだけに置きます。パスワードを変えると、ログイン済みの端末も再ログインが必要になります。
+ログインはありません。URL を知っている人は誰でも会計を記録できるので、URL はスタッフにだけ共有してください。

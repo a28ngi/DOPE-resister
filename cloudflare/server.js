@@ -2,16 +2,12 @@
  * DOPE レジ — Cloudflare Worker
  *
  * ・GET  /           レジ画面（register.html）を返す
- * ・POST /api/login  ID / パスワードを確認してトークンを返す
  * ・POST /api/sync   端末の未送信の操作（会計・取消）を保存し、売上一覧を返す
  *
  * 必要な設定（Cloudflare のダッシュボード → Worker → 設定）
  * ・D1 データベースのバインディング: 変数名 DB
- * ・シークレット: LOGIN_ID, LOGIN_PASSWORD（任意で TOKEN_SECRET）
  */
 
-const TOKEN_DAYS = 30;
-const MAX_LOGIN_FAILS = 30;      // 10 分間にこれ以上失敗したら一時停止
 const DAY_CUTOFF_HOURS = 6;
 const JST_OFFSET_MS = 9 * 3600 * 1000;
 
@@ -40,36 +36,7 @@ function json(data, status = 200) {
   });
 }
 
-// ---- token ----------------------------------------------------------------------
-const enc = new TextEncoder();
-function b64url(buf) {
-  let s = '';
-  new Uint8Array(buf).forEach((b) => { s += String.fromCharCode(b); });
-  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-function getLogin(env) {
-  return { id: String(env.LOGIN_ID || '').trim(), password: String(env.LOGIN_PASSWORD || '') };
-}
-// パスワードを変えると、それまでのトークンは使えなくなる
-async function sign(payload, env, cfg) {
-  const keyData = enc.encode((env.TOKEN_SECRET || 'dope-register') + ':' + cfg.id + ':' + cfg.password);
-  const key = await crypto.subtle.importKey('raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  return b64url(await crypto.subtle.sign('HMAC', key, enc.encode(payload)));
-}
-async function makeToken(env, cfg) {
-  const payload = 'v1.' + (Date.now() + TOKEN_DAYS * 86400000);
-  return payload + '.' + (await sign(payload, env, cfg));
-}
-async function verifyToken(token, env, cfg) {
-  if (!cfg.id || !cfg.password || typeof token !== 'string') return false;
-  const i = token.lastIndexOf('.');
-  if (i < 0) return false;
-  const payload = token.slice(0, i);
-  if ((await sign(payload, env, cfg)) !== token.slice(i + 1)) return false;
-  return Number(payload.split('.')[1]) > Date.now();
-}
-
-// ---- helpers --------------------------------------------------------------------
+// ---- helpers ---------------------------------------------------------------------
 function bizDay(ts) {
   const d = new Date(ts + JST_OFFSET_MS - DAY_CUTOFF_HOURS * 3600000);
   return d.toISOString().slice(0, 10);
@@ -119,25 +86,7 @@ function rowToSale(r) {
 }
 
 // ---- API ------------------------------------------------------------------------
-async function apiLogin(body, env) {
-  const cfg = getLogin(env);
-  if (!cfg.id || !cfg.password) return json({ ok: false, error: 'not_configured' });
-  const db = env.DB;
-  let fails = { n: 0, since: Date.now() };
-  try { fails = JSON.parse((await getMeta(db, 'login_fails')) || 'null') || fails; } catch (e) { /* reset */ }
-  if (Date.now() - fails.since > 600000) fails = { n: 0, since: Date.now() };
-  if (fails.n >= MAX_LOGIN_FAILS) return json({ ok: false, error: 'locked' }, 429);
-  if (String(body.id || '').trim() === cfg.id && String(body.password || '') === cfg.password) {
-    return json({ ok: true, token: await makeToken(env, cfg) });
-  }
-  fails.n += 1;
-  await setMetaStmt(db, 'login_fails', JSON.stringify(fails)).run();
-  return json({ ok: false, error: 'invalid' });
-}
-
 async function apiSync(body, env) {
-  const cfg = getLogin(env);
-  if (!(await verifyToken(body.token, env, cfg))) return json({ ok: false, error: 'auth' }, 401);
   const db = env.DB;
   const ops = Array.isArray(body.ops) ? body.ops.slice(0, 300) : [];
   const applied = [];
@@ -192,7 +141,6 @@ export default {
       let body = {};
       try { body = await request.json(); } catch (e) { return json({ ok: false, error: 'bad_json' }, 400); }
       await ensureSchema(env.DB);
-      if (url.pathname === '/api/login') return apiLogin(body, env);
       if (url.pathname === '/api/sync') return apiSync(body, env);
     }
     return new Response('Not found', { status: 404 });
