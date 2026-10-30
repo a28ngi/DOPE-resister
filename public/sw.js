@@ -1,6 +1,6 @@
 // 電波が悪い会場でも画面が開けるよう、画面のファイルを端末に保存しておく。
 // 画面は保存した分をすぐ出し、裏で最新版を取りに行く。/api は保存しない。
-const CACHE = 'dopepos-v3';
+const CACHE = 'dopepos-v4';
 const SHELL = ['/', '/app.js', '/app.css', '/logo.webp', '/manifest.webmanifest', '/icon-180.png'];
 
 self.addEventListener('install', (e) => {

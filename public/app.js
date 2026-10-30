@@ -134,6 +134,7 @@ async function sync() {
     renderAll();
   } catch (e) {
     setSync(navigator.onLine === false ? 'offline' : 'error', String(e.message || e));
+    if (!synced()) renderRegister();
   } finally {
     syncing = false;
     syncSoon();
@@ -247,8 +248,8 @@ function renderRegister() {
     <div class="group ${g}">
       <div class="group-head"><h2>${GROUPS[g].label}</h2><p>${esc(GROUPS[g].note(list))}</p></div>
       <div class="tiles">${list.map(tile).join('')}</div>
-    </div>`).join('') : `<p class="menu-empty">商品がありません。「設定」で商品を追加してください。</p>`) +
-    (shift ? '' : `<div class="shift-hint"><span>レジ開けがまだです。釣り銭の準備金を記録すると、締めで現金の過不足がわかります。</span><a class="btn sm" href="#close">レジ開け</a></div>`));
+    </div>`).join('') : `<p class="menu-empty">${esc(emptyMenuText())}</p>`) +
+    (shift || !synced() ? '' : `<div class="shift-hint"><span>レジ開けがまだです。釣り銭の準備金を記録すると、締めで現金の過不足がわかります。</span><a class="btn sm" href="#close">レジ開け</a></div>`));
 
   const t = cartTotals();
   const typing = document.activeElement && document.activeElement.id === 'tenderInput';
@@ -308,6 +309,13 @@ function payHtml(t) {
       <label class="field"><span>¥</span><input id="tenderInput" type="text" inputmode="numeric" autocomplete="off" placeholder="その他の金額" value="${esc(ui.tenderedText)}"></label>
       <div class="change" id="changeRow"></div>` : '<p class="fine" style="margin:0">PayPay などで受け取ったら会計してください。</p>'}
   </div>`;
+}
+// 一度もサーバーとつながっていない端末では、商品がないのではなく「まだ届いていない」
+const synced = () => db.cursor > 0 || Object.keys(db.items).length > 0;
+function emptyMenuText() {
+  if (synced()) return '商品がありません。「設定」で商品を追加してください。';
+  if (ui.sync.state === 'offline' || ui.sync.state === 'error') return 'サーバーにつながりません。電波を確認してください。つながると商品が表示されます。';
+  return '商品を読み込んでいます…';
 }
 function tile(i) {
   return `<button type="button" class="tile" data-item="${esc(i.id)}"
