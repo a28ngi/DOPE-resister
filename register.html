@@ -1,0 +1,930 @@
+<title>DOPE レジ</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=JetBrains+Mono:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* Layout: a 2×2 product board (paid row / ticket row, ticket tiles cut like a stub) beside a receipt-style cart; summary and history live in tabs */
+:root{
+  --bg:#F1F2F6; --surface:#FFFFFF; --surface-2:#E7E9F0; --ink:#15161C; --muted:#5A5E6D; --line:#D5D8E2;
+  --accent:#2537E6; --accent-ink:#FFFFFF; --accent-soft:#E3E6FF;
+  --ticket:#C41C61; --ticket-ink:#FFFFFF; --ticket-soft:#FBE3ED;
+  --vanilla-bg:#F6ECB6; --vanilla-ink:#574404;
+  --ok:#157046; --warn:#975000; --danger:#C2122B; --danger-ink:#FFFFFF;
+  --shadow:0 1px 2px rgba(20,22,40,.06),0 6px 18px rgba(20,22,40,.06);
+  --f-display:"Dela Gothic One","Hiragino Sans","Yu Gothic",sans-serif;
+  --f-body:"Zen Kaku Gothic New","Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo",sans-serif;
+  --f-num:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0E0F14; --surface:#181A22; --surface-2:#232631; --ink:#EEF0F6; --muted:#9BA0B1; --line:#2D303C;
+    --accent:#7684FF; --accent-ink:#0A0C1A; --accent-soft:#242B5E;
+    --ticket:#FF609E; --ticket-ink:#1B0611; --ticket-soft:#46162D;
+    --vanilla-bg:#3C3414; --vanilla-ink:#F3E39C;
+    --ok:#4DC48B; --warn:#F0A24E; --danger:#FF6B80; --danger-ink:#1E0509;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0E0F14; --surface:#181A22; --surface-2:#232631; --ink:#EEF0F6; --muted:#9BA0B1; --line:#2D303C;
+  --accent:#7684FF; --accent-ink:#0A0C1A; --accent-soft:#242B5E;
+  --ticket:#FF609E; --ticket-ink:#1B0611; --ticket-soft:#46162D;
+  --vanilla-bg:#3C3414; --vanilla-ink:#F3E39C;
+  --ok:#4DC48B; --warn:#F0A24E; --danger:#FF6B80; --danger-ink:#1E0509;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5;-webkit-text-size-adjust:100%}
+button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+button:disabled{cursor:default}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.app{max-width:1100px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:10px 32px}
+
+/* header */
+.top{display:flex;align-items:center;flex-wrap:wrap;gap:10px 14px;padding-block:6px 14px}
+.brand{display:flex;align-items:baseline;gap:8px;margin:0;font-weight:400}
+.brand b{font-family:var(--f-display);font-weight:400;font-size:28px;line-height:1;letter-spacing:.02em}
+.brand span{font-weight:700;font-size:15px;letter-spacing:.1em}
+.status{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px;background:var(--surface);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.status::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}
+.status[data-s="shared"]{color:var(--ok)}
+.status[data-s="local"]{color:var(--warn)}
+.status[data-s="error"],.status[data-s="readonly"]{color:var(--danger)}
+.tabs{margin-left:auto;display:flex;gap:2px;padding:4px;border-radius:12px;background:var(--surface-2)}
+.tabs a{padding:8px 16px;border-radius:9px;color:var(--muted);font-weight:700;font-size:14px;text-decoration:none;text-align:center}
+.tabs a[aria-current="page"]{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
+
+/* register */
+.register{display:grid;grid-template-columns:minmax(0,1fr);gap:18px}
+.board{display:flex;flex-direction:column;gap:6px;min-width:0}
+.row-head{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:2px 10px;margin:6px 2px 4px}
+.row-title{font-weight:700;font-size:13px;letter-spacing:.08em;color:var(--accent)}
+.row-head.ticket .row-title{color:var(--ticket)}
+.row-note{font-size:12px;color:var(--muted)}
+.tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.tile{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-height:118px;padding:14px 14px 13px 16px;border-radius:14px;border:2px solid var(--accent);background:var(--surface);text-align:left;transition:transform .08s ease,box-shadow .15s ease}
+.tile:active{transform:scale(.97)}
+.tile-name{font-weight:700;font-size:17px;line-height:1.2}
+.tile-price{margin-top:auto;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-family:var(--f-display);font-size:30px;line-height:1;color:var(--accent)}
+.tile-price s{font-family:var(--f-num);font-size:13px;color:var(--muted)}
+.tile.ticket{border-color:var(--ticket);background:var(--ticket-soft);overflow:hidden}
+.tile.ticket .tile-price{color:var(--ticket)}
+.tile.ticket::before,.tile.ticket::after{content:"";position:absolute;top:50%;width:18px;height:18px;margin-top:-9px;border-radius:50%;background:var(--bg);border:2px solid var(--ticket)}
+.tile.ticket::before{left:-11px}
+.tile.ticket::after{right:-11px}
+.tile-count{position:absolute;top:10px;right:12px;min-width:30px;height:30px;padding:0 8px;border-radius:15px;display:grid;place-items:center;background:var(--accent);color:var(--accent-ink);font-family:var(--f-num);font-weight:700;font-size:15px}
+.tile.ticket .tile-count{background:var(--ticket);color:var(--ticket-ink)}
+.tile.has-count{box-shadow:var(--shadow)}
+.chip{display:inline-flex;align-items:center;padding:1px 8px;border-radius:999px;background:var(--vanilla-bg);color:var(--vanilla-ink);font-size:12px;font-weight:700;white-space:nowrap}
+.notice{margin:0;padding:12px 14px;border-radius:12px;background:var(--surface);border:1px solid var(--line);font-size:13px;color:var(--muted)}
+.notice strong{color:var(--ink)}
+
+.cart{display:flex;flex-direction:column;gap:12px;min-width:0}
+.receipt{background:var(--surface);border-radius:16px;box-shadow:var(--shadow);padding:16px;display:flex;flex-direction:column;gap:14px}
+.receipt-head{display:flex;align-items:center;justify-content:space-between}
+.receipt-head h2{margin:0;font-size:14px;letter-spacing:.1em}
+.link-btn{border:0;background:none;padding:6px 4px;color:var(--muted);font-size:13px;font-weight:700;text-decoration:underline;text-underline-offset:3px}
+.lines{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.line{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:10px}
+.line-name{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;font-weight:500;min-width:0}
+.tag{font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;background:var(--accent-soft);color:var(--accent);white-space:nowrap}
+.tag.ticket{background:var(--ticket-soft);color:var(--ticket)}
+.qty{display:flex;align-items:center;gap:2px}
+.qty button{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:var(--surface-2);font-size:18px;font-weight:700;line-height:1}
+.qty span{min-width:28px;text-align:center;font-family:var(--f-num);font-weight:700}
+.line-amt{min-width:66px;text-align:right;font-family:var(--f-num);font-weight:500}
+.empty{margin:0;color:var(--muted);font-size:13px}
+.perf{border:0;border-top:2px dashed var(--line);margin:0}
+.pay{display:flex;flex-direction:column;gap:10px}
+.pay-label{font-size:12px;font-weight:700;letter-spacing:.08em;color:var(--muted)}
+.quick{display:flex;flex-wrap:wrap;gap:6px}
+.quick button{flex:1 1 auto;min-height:42px;padding:0 10px;border-radius:10px;border:1px solid var(--line);background:var(--surface-2);font-family:var(--f-num);font-weight:700;font-size:14px}
+.quick button[aria-pressed="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.recv{display:flex;align-items:center;gap:6px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface)}
+.recv:focus-within{outline:3px solid var(--accent);outline-offset:1px}
+.recv span{font-family:var(--f-num);color:var(--muted)}
+.recv input{flex:1;min-width:0;height:46px;border:0;background:transparent;color:var(--ink);font-family:var(--f-num);font-size:18px;outline:none}
+.change{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.change span{font-size:13px;color:var(--muted)}
+.change strong{font-family:var(--f-display);font-weight:400;font-size:28px;line-height:1.1}
+.change.short strong{color:var(--danger)}
+.change.idle strong{font-family:var(--f-body);font-weight:500;font-size:13px;color:var(--muted)}
+.free-note{margin:0;padding:10px 12px;border-radius:10px;background:var(--ticket-soft);color:var(--ticket);font-weight:700;font-size:13px}
+
+.checkout{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--surface);border-radius:16px;box-shadow:var(--shadow)}
+.total{display:flex;flex-direction:column;min-width:0}
+.total-label{font-size:12px;color:var(--muted);font-weight:700;letter-spacing:.08em}
+.total-amt{font-family:var(--f-display);font-size:32px;line-height:1.1;font-variant-numeric:tabular-nums}
+.total-cups{font-size:12px;color:var(--muted)}
+.checkout-btn{margin-left:auto;flex:0 1 230px;min-height:58px;padding:0 18px;border:0;border-radius:14px;background:var(--accent);color:var(--accent-ink);font-weight:700;font-size:18px;letter-spacing:.08em}
+.checkout-btn:disabled{background:var(--surface-2);color:var(--muted)}
+
+/* summary */
+.stack{display:flex;flex-direction:column;gap:14px}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 6px}
+.chips button{flex:0 0 auto;padding:7px 14px;border-radius:999px;border:1px solid var(--line);background:var(--surface);font-weight:700;font-size:13px;white-space:nowrap}
+.chips button[aria-pressed="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.kpi{display:flex;flex-direction:column;gap:6px;padding:14px 16px;border-radius:14px;background:var(--surface);box-shadow:var(--shadow);min-width:0}
+.kpi-label{font-size:12px;font-weight:700;letter-spacing:.08em;color:var(--muted)}
+.kpi-val{font-family:var(--f-display);font-size:34px;line-height:1.05;font-variant-numeric:tabular-nums;white-space:nowrap}
+.kpi-sub{font-size:12px;color:var(--muted)}
+.split{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--surface-2)}
+.split i{display:block;height:100%}
+.split .p{background:var(--accent)}
+.split .t{background:var(--ticket)}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted)}
+.legend b{font-family:var(--f-num);color:var(--ink)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:1px}
+.dot.p{background:var(--accent)}
+.dot.t{background:var(--ticket)}
+.panel{background:var(--surface);border-radius:14px;box-shadow:var(--shadow);overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{padding:10px 12px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:12px;color:var(--muted);font-weight:700;letter-spacing:.06em}
+th:first-child,td:first-child{text-align:left;white-space:normal}
+td.num{font-family:var(--f-num)}
+tr.group td{font-weight:700}
+tr.group.paid td:first-child{color:var(--accent)}
+tr.group.ticket td:first-child{color:var(--ticket)}
+tr.sub td:first-child{padding-left:24px;color:var(--muted);font-size:14px}
+tr.grand td{font-weight:700;border-bottom:0}
+.facts{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
+.fact{padding:12px 14px;border-radius:12px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:baseline;justify-content:space-between;gap:10px;min-width:0}
+.fact span{font-size:12px;color:var(--muted)}
+.fact b{font-family:var(--f-num);font-size:18px}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+.btn{min-height:44px;padding:0 16px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-weight:700}
+.btn.primary{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.fine{margin:0;font-size:12px;color:var(--muted)}
+.copy-fallback{width:100%;min-height:150px;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-family:var(--f-num);font-size:13px}
+
+/* history */
+.day-head{display:flex;justify-content:space-between;gap:8px;margin:6px 2px 6px;font-size:13px;font-weight:700;color:var(--muted)}
+.day-head b{font-family:var(--f-num);color:var(--ink)}
+.sales{list-style:none;margin:0 0 10px;padding:0;background:var(--surface);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+.sale{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.sale:last-child{border-bottom:0}
+.sale-time{font-family:var(--f-num);font-size:13px;color:var(--muted)}
+.sale-items{display:flex;flex-wrap:wrap;gap:4px;min-width:0}
+.sale-amt{text-align:right;font-family:var(--f-num);font-weight:700}
+.sale-amt small{display:block;font-weight:400;font-size:11px;color:var(--muted)}
+.void-btn{min-height:36px;padding:0 10px;border-radius:9px;border:1px solid var(--line);background:var(--surface-2);font-size:12px;font-weight:700;white-space:nowrap}
+.void-btn.armed{background:var(--danger);border-color:var(--danger);color:var(--danger-ink)}
+.sale.voided .sale-items,.sale.voided .sale-amt{opacity:.5;text-decoration:line-through}
+.voided-mark{font-size:11px;font-weight:700;color:var(--danger)}
+
+/* toast */
+.toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 12px);transform:translateX(-50%);z-index:30;display:flex;align-items:center;gap:12px;width:max-content;max-width:calc(100% - 32px);padding:12px 12px 12px 16px;border-radius:12px;background:var(--ink);color:var(--surface);box-shadow:var(--shadow);font-weight:500}
+.toast.error{background:var(--danger);color:var(--danger-ink)}
+.toast button{flex:0 0 auto;border:1px solid currentColor;background:transparent;color:inherit;border-radius:8px;padding:6px 10px;font-weight:700}
+
+@media (min-width:760px){
+  .register{grid-template-columns:minmax(0,1.2fr) minmax(320px,1fr);align-items:start}
+  .cart{position:sticky;top:calc(env(safe-area-inset-top,0px) + 12px)}
+  .tile{min-height:150px}
+  .tile-price{font-size:36px}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .facts{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media (max-width:759px){
+  .tabs{order:3;width:100%;margin-left:0}
+  .tabs a{flex:1}
+  .checkout{position:fixed;left:0;right:0;bottom:0;z-index:20;border-radius:0;border-top:1px solid var(--line);padding:10px max(16px,env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+  body.view-register .app{padding-bottom:110px}
+  .total-amt{font-size:28px}
+}
+@media (max-width:520px){
+  .kpis{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width:420px){
+  .kpi-val{font-size:30px}
+  .tile-price{font-size:26px}
+}
+@media (prefers-reduced-motion: reduce){
+  *{transition:none!important;animation:none!important}
+  .tile:active{transform:none}
+}
+</style>
+
+<div class="app">
+  <header class="top">
+    <h1 class="brand"><b>DOPE</b><span>レジ</span></h1>
+    <span class="status" id="status" data-s="connecting">接続中…</span>
+    <nav class="tabs" aria-label="画面切り替え">
+      <a href="#register" data-view="register" aria-current="page">レジ</a>
+      <a href="#summary" data-view="summary">集計</a>
+      <a href="#history" data-view="history">履歴</a>
+    </nav>
+  </header>
+
+  <main>
+    <section id="view-register" class="register" aria-label="レジ">
+      <div class="board">
+        <div class="row-head">
+          <span class="row-title">通常</span>
+          <span class="row-note">1杯 ¥300 ・ バニラアイス +¥200</span>
+        </div>
+        <div class="tiles">
+          <button type="button" class="tile" data-item="normal" aria-label="通常 ドリンク 300円を追加">
+            <span class="tile-name">ドリンク</span>
+            <span class="tile-price">¥300</span>
+            <span class="tile-count" hidden></span>
+          </button>
+          <button type="button" class="tile" data-item="normalIce" aria-label="通常 ドリンク バニラアイス付き 500円を追加">
+            <span class="tile-name">ドリンク</span>
+            <span class="chip">＋バニラアイス</span>
+            <span class="tile-price">¥500</span>
+            <span class="tile-count" hidden></span>
+          </button>
+        </div>
+        <div class="row-head ticket">
+          <span class="row-title">ライブチケット購入者</span>
+          <span class="row-note">ドリンク代 無料 ・ アイスは +¥200</span>
+        </div>
+        <div class="tiles">
+          <button type="button" class="tile ticket" data-item="ticket" aria-label="チケット購入者 ドリンク 無料を追加">
+            <span class="tile-name">ドリンク</span>
+            <span class="tile-price">¥0<s>¥300</s></span>
+            <span class="tile-count" hidden></span>
+          </button>
+          <button type="button" class="tile ticket" data-item="ticketIce" aria-label="チケット購入者 ドリンク バニラアイス付き 200円を追加">
+            <span class="tile-name">ドリンク</span>
+            <span class="chip">＋バニラアイス</span>
+            <span class="tile-price">¥200<s>¥500</s></span>
+            <span class="tile-count" hidden></span>
+          </button>
+        </div>
+        <p class="notice" id="readonlyNotice" hidden><strong>この端末は閲覧のみです。</strong>会計を記録するには、オーナーにこのページの「編集者」として招待してもらってください。</p>
+        <p class="notice" id="localNotice" hidden><strong>この端末だけに記録しています。</strong>2台の端末で売上を共有するには、claude.ai のリンクから開いてください。</p>
+      </div>
+
+      <aside class="cart" aria-label="ご注文">
+        <div class="receipt">
+          <div class="receipt-head">
+            <h2>ご注文</h2>
+            <button type="button" class="link-btn" id="clearBtn" hidden>すべてクリア</button>
+          </div>
+          <ul class="lines" id="cartLines"></ul>
+          <p class="empty" id="cartEmpty">上のボタンをタップすると、ここに追加されます。チケット購入者のドリンクはピンクのボタンです。</p>
+          <p class="free-note" id="freeNote" hidden>チケット特典のみ。お支払いはありません。</p>
+          <div class="pay" id="paySection" hidden>
+            <hr class="perf">
+            <div class="pay-label">お預かり</div>
+            <div class="quick" id="quick">
+              <button type="button" data-recv="exact" aria-pressed="false">ちょうど</button>
+              <button type="button" data-recv="500" aria-pressed="false">¥500</button>
+              <button type="button" data-recv="1000" aria-pressed="false">¥1,000</button>
+              <button type="button" data-recv="5000" aria-pressed="false">¥5,000</button>
+              <button type="button" data-recv="10000" aria-pressed="false">¥10,000</button>
+            </div>
+            <label class="recv" for="recvInput"><span>¥</span><input id="recvInput" type="text" inputmode="numeric" autocomplete="off" placeholder="その他の金額を入力"></label>
+            <div class="change idle" id="changeRow"><span id="changeLabel">お釣り</span><strong id="changeAmt">お預かりを選ぶと表示します</strong></div>
+          </div>
+        </div>
+        <div class="checkout" id="checkoutBar">
+          <div class="total">
+            <span class="total-label">合計</span>
+            <span class="total-amt" id="totalAmt">¥0</span>
+            <span class="total-cups" id="totalCups">まだ選ばれていません</span>
+          </div>
+          <button type="button" class="checkout-btn" id="checkoutBtn" disabled>接続中…</button>
+        </div>
+      </aside>
+    </section>
+
+    <section id="view-summary" class="stack" aria-label="集計" hidden>
+      <div class="chips" id="dayChips" role="group" aria-label="集計する日"></div>
+      <div class="kpis">
+        <div class="kpi">
+          <span class="kpi-label">売上合計</span>
+          <span class="kpi-val" id="kSales">¥0</span>
+          <span class="kpi-sub" id="kTx">会計 0回</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">出たドリンク</span>
+          <span class="kpi-val" id="kCups">0杯</span>
+          <div class="split" aria-hidden="true"><i class="p" id="splitP" style="width:0%"></i><i class="t" id="splitT" style="width:0%"></i></div>
+          <div class="legend"><span><i class="dot p"></i>通常 <b id="kPaid">0</b>杯</span><span><i class="dot t"></i>チケット <b id="kTicket">0</b>杯</span></div>
+        </div>
+      </div>
+      <div class="panel">
+        <table>
+          <thead><tr><th>内訳</th><th>杯数</th><th>金額</th></tr></thead>
+          <tbody id="breakdown"></tbody>
+        </table>
+      </div>
+      <div class="facts">
+        <div class="fact"><span>バニラアイス</span><b id="fIce">0個</b></div>
+        <div class="fact"><span>チケット特典で無料にした額</span><b id="fFree">¥0</b></div>
+        <div class="fact"><span>取り消した会計</span><b id="fVoid">0件</b></div>
+      </div>
+      <div class="panel" id="perDayPanel" hidden>
+        <table>
+          <thead><tr><th>営業日</th><th>通常</th><th>チケット</th><th>アイス</th><th>売上</th></tr></thead>
+          <tbody id="perDay"></tbody>
+        </table>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn primary" id="copyBtn">集計をコピー</button>
+        <button type="button" class="btn" id="csvBtn" hidden>CSVを保存</button>
+      </div>
+      <textarea class="copy-fallback" id="copyFallback" readonly hidden aria-label="集計テキスト"></textarea>
+      <p class="fine">営業日は朝6時で区切っています（深夜0〜6時の売上は前日分）。取り消した会計は集計に含みません。</p>
+    </section>
+
+    <section id="view-history" aria-label="履歴" hidden>
+      <div id="historyList"></div>
+      <p class="empty" id="historyEmpty">まだ会計がありません。レジでドリンクを選んで「会計する」を押すと、ここに記録されます。</p>
+    </section>
+  </main>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden><span id="toastMsg"></span><button type="button" id="toastAction" hidden></button></div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---- 料金 -------------------------------------------------------------
+  // ドリンク1杯の値段とバニラアイスの追加料金。値段を変えるときはここだけ直す。
+  var PRICE = { drink: 300, ice: 200 };
+  var KEYS = ['normal', 'normalIce', 'ticket', 'ticketIce'];
+  var DAY_CUTOFF_HOURS = 6; // 営業日の区切り（朝6時）
+  var LS_SALES = 'dope-register:sales:v1';
+  var LS_CART = 'dope-register:cart:v1';
+
+  function priceFor(key, p) {
+    p = p || PRICE;
+    if (key === 'normal') return p.drink;
+    if (key === 'normalIce') return p.drink + p.ice;
+    if (key === 'ticket') return 0;            // チケット購入者はドリンク代無料
+    if (key === 'ticketIce') return p.ice;     // アイス代だけいただく
+    return 0;
+  }
+  var isTicket = function (k) { return k === 'ticket' || k === 'ticketIce'; };
+  var hasIce = function (k) { return k === 'normalIce' || k === 'ticketIce'; };
+
+  // ---- state --------------------------------------------------------------
+  var state = {
+    cart: { normal: 0, normalIce: 0, ticket: 0, ticketIce: 0 },
+    recv: null,                // null | {mode:'exact'} | {mode:'amount', value, src}
+    sales: [],                 // newest first
+    loaded: false,
+    mode: 'connecting',        // connecting | shared | local
+    syncError: false,
+    canWrite: true,
+    view: 'register',
+    dayFilter: 'today',
+    busy: false
+  };
+  var salesCol = null;
+  var downloads = null;
+  var localOk = true;
+  var pendingVoid = null, pendingVoidTimer = null;
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  // ---- helpers ------------------------------------------------------------
+  function yen(n) { return '¥' + Math.round(n || 0).toLocaleString('ja-JP'); }
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function bizDay(ts) {
+    var d = new Date(ts - DAY_CUTOFF_HOURS * 3600 * 1000);
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  }
+  function dayLabel(day) {
+    var p = day.split('-').map(Number);
+    var w = '日月火水木金土'[new Date(p[0], p[1] - 1, p[2]).getDay()];
+    return p[1] + '/' + p[2] + '(' + w + ')';
+  }
+  function timeLabel(ts) { var d = new Date(ts); return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function dateTimeLabel(ts) {
+    var d = new Date(ts);
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; });
+  }
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function makeId(ts) { return 's' + ts.toString(36) + '-' + Math.random().toString(36).slice(2, 7); }
+  function saleDay(s) { return s.day || bizDay(s.ts || 0); }
+  function itemsOf(s) { var it = s.items || {}; var o = {}; KEYS.forEach(function (k) { o[k] = Number(it[k]) || 0; }); return o; }
+
+  function cartTotals() {
+    var total = 0, cups = 0;
+    KEYS.forEach(function (k) { total += priceFor(k) * state.cart[k]; cups += state.cart[k]; });
+    return { total: total, cups: cups };
+  }
+  function receivedValue(total) {
+    if (!state.recv) return null;
+    if (state.recv.mode === 'exact') return total;
+    return state.recv.value;
+  }
+  function saveCartDraft() {
+    try { localStorage.setItem(LS_CART, JSON.stringify(state.cart)); } catch (e) { /* ignore */ }
+  }
+
+  // ---- storage --------------------------------------------------------------
+  function loadLocalSales() {
+    try { var raw = localStorage.getItem(LS_SALES); return raw ? JSON.parse(raw) : []; }
+    catch (e) { return null; }
+  }
+  function persistLocal() {
+    try { localStorage.setItem(LS_SALES, JSON.stringify(state.sales)); localOk = true; }
+    catch (e) { localOk = false; }
+  }
+  function sortSales() { state.sales.sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); }); }
+
+  async function withRetry(fn) {
+    try { return await fn(); }
+    catch (e) {
+      var code = e && e.code;
+      var known = ['invalid_argument', 'quota_exceeded', 'revoked', 'not_granted', 'capability_disabled', 'capability_removed', 'transform_error', 'resource_exhausted'];
+      if (known.indexOf(code) !== -1) throw e;
+      await sleep(400 + Math.random() * 800);
+      return await fn();
+    }
+  }
+
+  async function writeSale(sale) {
+    if (state.mode === 'shared') {
+      var body = Object.assign({}, sale); delete body.id;
+      await withRetry(function () { return salesCol.doc(sale.id).set(body); });
+    } else {
+      state.sales.unshift(sale); sortSales(); persistLocal();
+      if (!localOk) throw { code: 'local_failed' };
+    }
+  }
+  async function updateSale(id, patch) {
+    if (state.mode === 'shared') {
+      await withRetry(function () { return salesCol.doc(id).update(patch); });
+    } else {
+      var s = state.sales.find(function (x) { return x.id === id; });
+      if (s) { Object.assign(s, patch); persistLocal(); }
+    }
+  }
+
+  function handleWriteError(e) {
+    var code = e && e.code;
+    if (code === 'invalid_argument' || code === 'not_granted') {
+      state.canWrite = false; renderStatus(); renderCheckout();
+      toast('この端末には記録する権限がありません。オーナーに「編集者」として招待してもらってください。', { error: true, ms: 8000 });
+    } else if (code === 'quota_exceeded') {
+      toast('保存できる件数の上限に達しました。古い記録の整理が必要です。', { error: true, ms: 8000 });
+    } else if (code === 'local_failed') {
+      toast('この端末に保存できませんでした。プライベートブラウズを解除してください。', { error: true, ms: 8000 });
+    } else {
+      toast('保存できませんでした。通信を確認して、もう一度「会計する」を押してください。', { error: true, ms: 8000 });
+    }
+  }
+
+  // ---- connection -------------------------------------------------------------
+  var resubscribed = false;
+  function subscribe() {
+    salesCol.onSnapshot(function (snap) {
+      state.sales = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
+      sortSales();
+      state.loaded = true;
+      state.syncError = false;
+      renderData(); renderStatus();
+    }, function (err) {
+      if (err && err.code === 'unavailable' && !resubscribed) {
+        resubscribed = true; setTimeout(subscribe, 2000); return;
+      }
+      state.syncError = true; renderStatus();
+    });
+  }
+
+  async function connect() {
+    var api = window.claude && typeof window.claude.use === 'function' ? window.claude : null;
+    var db = null;
+    if (api) { try { db = await api.use('db'); } catch (e) { db = null; } }
+    if (db) {
+      state.mode = 'shared';
+      salesCol = db.collection('sales');
+      subscribe();
+      try {
+        var user = await api.use('user');
+        if (user) { var w = await user.can('data.write'); if (w === false) state.canWrite = false; }
+      } catch (e) { /* keep inputs; a refused write decides */ }
+    } else {
+      state.mode = 'local';
+      var list = loadLocalSales();
+      localOk = list !== null;
+      state.sales = Array.isArray(list) ? list : [];
+      sortSales();
+      state.loaded = true;
+    }
+    if (api) {
+      try { downloads = await api.use('downloads'); } catch (e) { downloads = null; }
+    }
+    renderAll();
+  }
+
+  // ---- actions ----------------------------------------------------------------
+  function addItem(k, delta) {
+    state.cart[k] = Math.max(0, Math.min(99, state.cart[k] + delta));
+    saveCartDraft();
+    renderCart();
+  }
+  function clearCart() {
+    KEYS.forEach(function (k) { state.cart[k] = 0; });
+    state.recv = null;
+    $('recvInput').value = '';
+    saveCartDraft();
+    renderCart();
+  }
+
+  async function checkout() {
+    var t = cartTotals();
+    if (!t.cups || state.busy || state.mode === 'connecting' || !state.canWrite) return;
+    var recv = t.total > 0 ? receivedValue(t.total) : null;
+    if (recv !== null && recv < t.total) return;
+    var ts = Date.now();
+    var items = Object.assign({}, state.cart);
+    var sale = {
+      id: makeId(ts),
+      ts: ts,
+      day: bizDay(ts),
+      items: items,
+      cups: t.cups,
+      ice: items.normalIce + items.ticketIce,
+      total: t.total,
+      received: recv,
+      change: recv === null ? null : recv - t.total,
+      prices: { drink: PRICE.drink, ice: PRICE.ice },
+      voided: false
+    };
+    var prevCart = Object.assign({}, state.cart), prevRecv = state.recv, prevInput = $('recvInput').value;
+    clearCart();
+    state.busy = true; renderCheckout();
+    try {
+      await writeSale(sale);
+      if (state.mode === 'local') renderData();
+      var msg = '会計しました ' + yen(sale.total) + (sale.change ? '・お釣り ' + yen(sale.change) : '');
+      toast(msg, { action: '取り消す', onAction: function () { setVoided(sale.id, true); }, ms: 7000 });
+    } catch (e) {
+      state.cart = prevCart; state.recv = prevRecv; $('recvInput').value = prevInput;
+      saveCartDraft(); renderCart();
+      handleWriteError(e);
+    } finally {
+      state.busy = false; renderCheckout();
+    }
+  }
+
+  async function setVoided(id, voided) {
+    try {
+      await updateSale(id, { voided: voided, voidedAt: voided ? Date.now() : null });
+      if (state.mode === 'local') renderData();
+      toast(voided ? '会計を取り消しました' : '会計を元に戻しました');
+    } catch (e) { handleWriteError(e); }
+  }
+
+  // ---- tally ------------------------------------------------------------------
+  function tally(list) {
+    var t = { normal: 0, normalIce: 0, ticket: 0, ticketIce: 0, amt: { normal: 0, normalIce: 0, ticket: 0, ticketIce: 0 }, sales: 0, tx: 0, freed: 0, voided: 0 };
+    list.forEach(function (s) {
+      if (s.voided) { t.voided++; return; }
+      var it = itemsOf(s), p = s.prices || PRICE;
+      KEYS.forEach(function (k) { t[k] += it[k]; t.amt[k] += priceFor(k, p) * it[k]; });
+      t.freed += (it.ticket + it.ticketIce) * (p.drink || 0);
+      t.sales += Number(s.total) || 0;
+      t.tx++;
+    });
+    t.paidCups = t.normal + t.normalIce;
+    t.ticketCups = t.ticket + t.ticketIce;
+    t.cups = t.paidCups + t.ticketCups;
+    t.ice = t.normalIce + t.ticketIce;
+    return t;
+  }
+  function filteredSales() {
+    if (state.dayFilter === 'all') return state.sales;
+    var day = state.dayFilter === 'today' ? bizDay(Date.now()) : state.dayFilter;
+    return state.sales.filter(function (s) { return saleDay(s) === day; });
+  }
+  function filterLabel() {
+    if (state.dayFilter === 'all') return '全期間';
+    var day = state.dayFilter === 'today' ? bizDay(Date.now()) : state.dayFilter;
+    return dayLabel(day);
+  }
+
+  // ---- render -----------------------------------------------------------------
+  function renderStatus() {
+    var el = $('status'), s, text;
+    if (state.mode === 'connecting') { s = 'connecting'; text = '接続中…'; }
+    else if (!state.canWrite) { s = 'readonly'; text = '閲覧のみ'; }
+    else if (state.syncError) { s = 'error'; text = '同期が止まっています・再読み込みしてください'; }
+    else if (state.mode === 'shared') { s = 'shared'; text = '全端末で共有中'; }
+    else { s = 'local'; text = localOk ? 'この端末のみに保存' : '保存できません'; }
+    el.dataset.s = s; el.textContent = text;
+    $('readonlyNotice').hidden = state.canWrite || state.mode === 'connecting';
+    $('localNotice').hidden = state.mode !== 'local';
+  }
+
+  function renderTiles() {
+    document.querySelectorAll('.tile').forEach(function (b) {
+      var n = state.cart[b.dataset.item];
+      var badge = b.querySelector('.tile-count');
+      badge.hidden = !n; badge.textContent = n;
+      b.classList.toggle('has-count', n > 0);
+    });
+  }
+
+  function lineName(k) {
+    return '<span class="tag' + (isTicket(k) ? ' ticket' : '') + '">' + (isTicket(k) ? 'チケット' : '通常') + '</span>ドリンク' +
+      (hasIce(k) ? '<span class="chip">＋バニラアイス</span>' : '');
+  }
+
+  function renderCart() {
+    renderTiles();
+    var keys = KEYS.filter(function (k) { return state.cart[k] > 0; });
+    $('cartLines').innerHTML = keys.map(function (k) {
+      var n = state.cart[k];
+      return '<li class="line"><div class="line-name">' + lineName(k) + '</div>' +
+        '<div class="qty"><button type="button" data-dec="' + k + '" aria-label="1つ減らす">−</button><span>' + n + '</span>' +
+        '<button type="button" data-inc="' + k + '" aria-label="1つ増やす">＋</button></div>' +
+        '<div class="line-amt">' + yen(priceFor(k) * n) + '</div></li>';
+    }).join('');
+    var t = cartTotals();
+    $('cartEmpty').hidden = keys.length > 0;
+    $('clearBtn').hidden = keys.length === 0;
+    $('freeNote').hidden = !(keys.length > 0 && t.total === 0);
+    $('paySection').hidden = !(t.total > 0);
+
+    document.querySelectorAll('#quick button').forEach(function (b) {
+      var v = b.dataset.recv;
+      var on = !!state.recv && ((v === 'exact' && state.recv.mode === 'exact') ||
+        (state.recv.mode === 'amount' && state.recv.src === 'quick' && String(state.recv.value) === v));
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+
+    var recv = receivedValue(t.total);
+    var row = $('changeRow');
+    row.classList.remove('idle', 'short');
+    if (recv === null) {
+      row.classList.add('idle'); $('changeLabel').textContent = 'お釣り'; $('changeAmt').textContent = 'お預かりを選ぶと表示します';
+    } else if (recv < t.total) {
+      row.classList.add('short'); $('changeLabel').textContent = '足りません'; $('changeAmt').textContent = 'あと ' + yen(t.total - recv);
+    } else {
+      $('changeLabel').textContent = 'お釣り'; $('changeAmt').textContent = yen(recv - t.total);
+    }
+    renderCheckout();
+  }
+
+  function renderCheckout() {
+    var t = cartTotals();
+    $('totalAmt').textContent = yen(t.total);
+    $('totalCups').textContent = t.cups ? t.cups + '杯' : 'まだ選ばれていません';
+    var recv = t.total > 0 ? receivedValue(t.total) : null;
+    var short = recv !== null && recv < t.total;
+    var btn = $('checkoutBtn'), label = '会計する', disabled = !t.cups || short || state.busy;
+    if (state.mode === 'connecting') { label = '接続中…'; disabled = true; }
+    else if (!state.canWrite) { label = '閲覧のみ'; disabled = true; }
+    else if (state.busy) { label = '記録中…'; }
+    btn.textContent = label; btn.disabled = disabled;
+  }
+
+  function renderSummary() {
+    // day chips
+    var today = bizDay(Date.now());
+    var days = [];
+    state.sales.forEach(function (s) { var d = saleDay(s); if (d !== today && days.indexOf(d) === -1) days.push(d); });
+    days.sort().reverse();
+    var chips = [{ v: 'today', l: '今日 ' + dayLabel(today) }].concat(days.map(function (d) { return { v: d, l: dayLabel(d) }; }));
+    chips.push({ v: 'all', l: '全期間' });
+    $('dayChips').innerHTML = chips.map(function (c) {
+      return '<button type="button" data-day="' + esc(c.v) + '" aria-pressed="' + (state.dayFilter === c.v ? 'true' : 'false') + '">' + esc(c.l) + '</button>';
+    }).join('');
+
+    var t = tally(filteredSales());
+    $('kSales').textContent = yen(t.sales);
+    $('kTx').textContent = '会計 ' + t.tx + '回';
+    $('kCups').textContent = t.cups + '杯';
+    $('kPaid').textContent = t.paidCups;
+    $('kTicket').textContent = t.ticketCups;
+    $('splitP').style.width = (t.cups ? t.paidCups / t.cups * 100 : 0) + '%';
+    $('splitT').style.width = (t.cups ? t.ticketCups / t.cups * 100 : 0) + '%';
+
+    var rows = [
+      ['group paid', '通常（有料）', t.paidCups, t.amt.normal + t.amt.normalIce],
+      ['sub', 'ドリンクのみ', t.normal, t.amt.normal],
+      ['sub', '＋バニラアイス', t.normalIce, t.amt.normalIce],
+      ['group ticket', 'チケット購入者', t.ticketCups, t.amt.ticket + t.amt.ticketIce],
+      ['sub', 'ドリンクのみ（無料）', t.ticket, t.amt.ticket],
+      ['sub', '＋バニラアイス（アイス代）', t.ticketIce, t.amt.ticketIce],
+      ['grand', '合計', t.cups, t.sales]
+    ];
+    $('breakdown').innerHTML = rows.map(function (r) {
+      return '<tr class="' + r[0] + '"><td>' + r[1] + '</td><td class="num">' + r[2] + '杯</td><td class="num">' + yen(r[3]) + '</td></tr>';
+    }).join('');
+    $('fIce').textContent = t.ice + '個';
+    $('fFree').textContent = yen(t.freed);
+    $('fVoid').textContent = t.voided + '件';
+
+    // per-day table (all-time view only)
+    var showPerDay = state.dayFilter === 'all' && state.sales.length > 0;
+    $('perDayPanel').hidden = !showPerDay;
+    if (showPerDay) {
+      var all = [];
+      state.sales.forEach(function (s) { var d = saleDay(s); if (all.indexOf(d) === -1) all.push(d); });
+      all.sort().reverse();
+      $('perDay').innerHTML = all.map(function (d) {
+        var x = tally(state.sales.filter(function (s) { return saleDay(s) === d; }));
+        return '<tr><td>' + esc(dayLabel(d)) + '</td><td class="num">' + x.paidCups + '杯</td><td class="num">' + x.ticketCups + '杯</td><td class="num">' + x.ice + '個</td><td class="num">' + yen(x.sales) + '</td></tr>';
+      }).join('');
+    }
+    $('csvBtn').hidden = !downloads;
+  }
+
+  function saleChips(s) {
+    var it = itemsOf(s);
+    return KEYS.filter(function (k) { return it[k] > 0; }).map(function (k) {
+      return '<span class="tag' + (isTicket(k) ? ' ticket' : '') + '">' + (isTicket(k) ? 'チケット' : '通常') + (hasIce(k) ? '＋アイス' : '') + ' ×' + it[k] + '</span>';
+    }).join('');
+  }
+
+  function renderHistory() {
+    var list = state.sales;
+    $('historyEmpty').hidden = list.length > 0;
+    if (!list.length) { $('historyList').innerHTML = ''; return; }
+    var shown = list.slice(0, 300);
+    var html = '', current = null;
+    shown.forEach(function (s) {
+      var d = saleDay(s);
+      if (d !== current) {
+        if (current !== null) html += '</ul>';
+        var t = tally(list.filter(function (x) { return saleDay(x) === d; }));
+        html += '<div class="day-head"><span>' + esc(dayLabel(d)) + '</span><span>' + t.cups + '杯・<b>' + yen(t.sales) + '</b></span></div><ul class="sales">';
+        current = d;
+      }
+      var armed = pendingVoid === s.id;
+      var btn = s.voided
+        ? '<button type="button" class="void-btn" data-restore="' + esc(s.id) + '">戻す</button>'
+        : '<button type="button" class="void-btn' + (armed ? ' armed' : '') + '" data-void="' + esc(s.id) + '">' + (armed ? '本当に取消' : '取消') + '</button>';
+      var pay = (s.received !== null && s.received !== undefined) ? '<small>預 ' + yen(s.received) + '・釣 ' + yen(s.change) + '</small>' : '';
+      html += '<li class="sale' + (s.voided ? ' voided' : '') + '">' +
+        '<span class="sale-time">' + timeLabel(s.ts) + '</span>' +
+        '<div class="sale-items">' + saleChips(s) + (s.voided ? '<span class="voided-mark">取消済み</span>' : '') + '</div>' +
+        '<div class="sale-amt">' + yen(s.total) + pay + '</div>' + btn + '</li>';
+    });
+    html += '</ul>';
+    if (list.length > shown.length) html += '<p class="fine">最新の300件を表示しています。集計にはすべての会計が入っています。</p>';
+    $('historyList').innerHTML = html;
+  }
+
+  function renderData() { renderSummary(); renderHistory(); }
+
+  function renderView() {
+    ['register', 'summary', 'history'].forEach(function (v) { $('view-' + v).hidden = state.view !== v; });
+    document.querySelectorAll('.tabs a').forEach(function (a) {
+      if (a.dataset.view === state.view) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+    document.body.classList.toggle('view-register', state.view === 'register');
+    $('checkoutBar').hidden = state.view !== 'register';
+  }
+
+  function renderAll() { renderStatus(); renderView(); renderCart(); renderData(); }
+
+  // ---- toast ------------------------------------------------------------------
+  var toastTimer = null;
+  function toast(msg, opts) {
+    opts = opts || {};
+    var el = $('toast'), btn = $('toastAction');
+    $('toastMsg').textContent = msg;
+    el.classList.toggle('error', !!opts.error);
+    if (opts.action) {
+      btn.hidden = false; btn.textContent = opts.action;
+      btn.onclick = function () { el.hidden = true; opts.onAction(); };
+    } else { btn.hidden = true; btn.onclick = null; }
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.hidden = true; }, opts.ms || 3500);
+  }
+
+  // ---- summary text / csv -------------------------------------------------------
+  function summaryText() {
+    var t = tally(filteredSales());
+    return [
+      'DOPE レジ集計 ' + filterLabel(),
+      '売上合計 ' + yen(t.sales) + '（会計 ' + t.tx + '回）',
+      '出たドリンク ' + t.cups + '杯',
+      '・通常 ' + t.paidCups + '杯（うちアイス付き ' + t.normalIce + '）' + yen(t.amt.normal + t.amt.normalIce),
+      '・チケット購入者 ' + t.ticketCups + '杯（うちアイス付き ' + t.ticketIce + '）' + yen(t.amt.ticket + t.amt.ticketIce),
+      'バニラアイス ' + t.ice + '個',
+      'チケット特典で無料にした額 ' + yen(t.freed)
+    ].join('\n');
+  }
+  function csvCell(v) { var s = v === null || v === undefined ? '' : String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+  function buildCsv(list) {
+    var head = ['日時', '営業日', '通常ドリンク', '通常＋アイス', 'チケットドリンク', 'チケット＋アイス', '杯数', 'アイス数', '金額', 'お預かり', 'お釣り', '取消'];
+    var rows = list.slice().sort(function (a, b) { return a.ts - b.ts; }).map(function (s) {
+      var it = itemsOf(s);
+      return [dateTimeLabel(s.ts), saleDay(s), it.normal, it.normalIce, it.ticket, it.ticketIce,
+        it.normal + it.normalIce + it.ticket + it.ticketIce, it.normalIce + it.ticketIce, s.total,
+        s.received === null || s.received === undefined ? '' : s.received,
+        s.change === null || s.change === undefined ? '' : s.change, s.voided ? '取消' : ''];
+    });
+    return '﻿' + [head].concat(rows).map(function (r) { return r.map(csvCell).join(','); }).join('\r\n');
+  }
+
+  // ---- routing ------------------------------------------------------------------
+  function route() {
+    var h = (location.hash || '').replace('#', '');
+    state.view = ['register', 'summary', 'history'].indexOf(h) !== -1 ? h : 'register';
+    renderView();
+  }
+
+  // ---- events -------------------------------------------------------------------
+  function bind() {
+    document.querySelectorAll('.tile').forEach(function (b) {
+      b.addEventListener('click', function () { addItem(b.dataset.item, 1); });
+    });
+    $('cartLines').addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.inc) addItem(b.dataset.inc, 1);
+      if (b.dataset.dec) addItem(b.dataset.dec, -1);
+    });
+    $('clearBtn').addEventListener('click', clearCart);
+    $('quick').addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b) return;
+      var v = b.dataset.recv;
+      state.recv = v === 'exact' ? { mode: 'exact' } : { mode: 'amount', value: Number(v), src: 'quick' };
+      $('recvInput').value = '';
+      renderCart();
+    });
+    $('recvInput').addEventListener('input', function (e) {
+      var digits = e.target.value.replace(/[^0-9０-９]/g, '').replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); });
+      if (e.target.value !== digits) e.target.value = digits;
+      state.recv = digits ? { mode: 'amount', value: Number(digits), src: 'input' } : null;
+      renderCart();
+    });
+    $('checkoutBtn').addEventListener('click', checkout);
+
+    $('dayChips').addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b) return;
+      state.dayFilter = b.dataset.day; $('copyFallback').hidden = true; renderSummary();
+    });
+    $('copyBtn').addEventListener('click', function () {
+      var text = summaryText();
+      var fallback = function () {
+        var ta = $('copyFallback'); ta.value = text; ta.hidden = false; ta.focus(); ta.select();
+        toast('コピーできなかったので、下のテキストを長押ししてコピーしてください。');
+      };
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(function () { toast('集計をコピーしました'); }, fallback);
+        } else fallback();
+      } catch (e) { fallback(); }
+    });
+    $('csvBtn').addEventListener('click', async function () {
+      if (!downloads) return;
+      var label = state.dayFilter === 'all' ? 'all' : (state.dayFilter === 'today' ? bizDay(Date.now()) : state.dayFilter);
+      try {
+        await downloads.save({ filename: 'dope-register-' + label + '.csv', data: buildCsv(filteredSales()) });
+      } catch (e) {
+        if (!e || e.code !== 'declined') toast('CSVを保存できませんでした。', { error: true });
+      }
+    });
+
+    $('historyList').addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.restore) { setVoided(b.dataset.restore, false); return; }
+      var id = b.dataset.void; if (!id) return;
+      if (!state.canWrite) { toast('この端末は閲覧のみです。', { error: true }); return; }
+      if (pendingVoid === id) {
+        pendingVoid = null; clearTimeout(pendingVoidTimer); setVoided(id, true);
+      } else {
+        pendingVoid = id; renderHistory();
+        clearTimeout(pendingVoidTimer);
+        pendingVoidTimer = setTimeout(function () { pendingVoid = null; renderHistory(); }, 4000);
+      }
+    });
+
+    window.addEventListener('hashchange', route);
+  }
+
+  // ---- boot ---------------------------------------------------------------------
+  function start(saved) {
+    saved = saved || {};
+    var cart = saved.cart;
+    if (!cart) { try { cart = JSON.parse(localStorage.getItem(LS_CART) || 'null'); } catch (e) { cart = null; } }
+    if (cart) KEYS.forEach(function (k) { state.cart[k] = Math.max(0, Number(cart[k]) || 0); });
+    if (saved.dayFilter) state.dayFilter = saved.dayFilter;
+    bind();
+    route();
+    renderAll();
+    connect();
+  }
+
+  var hot = window.claude && window.claude.hot;
+  if (hot && typeof hot.snapshot === 'function') {
+    try { hot.snapshot(function () { return { cart: state.cart, dayFilter: state.dayFilter }; }); } catch (e) { /* ignore */ }
+  }
+  if (hot && typeof hot.ready === 'function') hot.ready(start);
+  else start((hot && hot.data) || {});
+})();
+</script>
